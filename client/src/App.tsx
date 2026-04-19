@@ -8,7 +8,9 @@ import {
   createTheme,
 } from "@mui/material";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
-import { LoginPage } from "./pages/LoginPage";
+import { AuthShell } from "./pages/auth/AuthShell";
+import { LoginFormPage } from "./pages/auth/LoginFormPage";
+import { LoginSelectionPage } from "./pages/auth/LoginSelectionPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { PatientShell } from "./modules/patient";
 import { DentistShell } from "./modules/dentist";
@@ -53,8 +55,14 @@ function HomeRedirect() {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      <Route element={<AuthShell />}>
+        <Route path="/login" element={<Outlet />}>
+          <Route index element={<LoginSelectionPage />} />
+          <Route path="patient" element={<LoginFormPage />} />
+          <Route path="admin" element={<LoginFormPage />} />
+        </Route>
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
 
       <Route element={<RequireAuth />}>
         <Route path="/" element={<HomeRedirect />} />

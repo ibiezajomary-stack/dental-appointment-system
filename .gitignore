@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+.env
+.env.local
+# Local DB credentials (never commit)
+db_config.md
+*.log
+.DS_Store
+server/prisma/*.db
+server/prisma/*.db-journal
+coverage
+.vscode/*
+!.vscode/extensions.json

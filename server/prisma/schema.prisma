@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  DENTIST
+  PATIENT
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum ConsultationStatus {
+  REQUESTED
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BillingStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+/// Per-surface charting on odontogram (paper-style schematic).
+enum ToothSurfaceStateKind {
+  NONE
+  CARIES
+  FILLED
+  CROWN
+  MISSING
+  WATCH
+}
+
+model User {
+  id                        String               @id @default(cuid())
+  email                     String               @unique
+  passwordHash              String
+  role                      Role
+  createdAt                 DateTime             @default(now())
+  patient                   Patient?
+  dentist                   Dentist?
+  consultationNotesAuthored ConsultationNote[]   @relation("NoteAuthor")
+  toothRecordsRecorded      ToothRecord[]        @relation("ToothRecorder")
+  filesUploaded             StoredFile[]         @relation("FileUploader")
+}
+
+model Patient {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName        String
+  lastName         String
+  phone            String?
+  dateOfBirth      DateTime?
+  address          String?  @db.Text
+  referredBy       String?
+  emergencyContact String?
+  emergencyPhone   String?
+  medicalHistory   String?  @db.Text
+  allergies        String?  @db.Text
+  physicianName    String?
+  physicianAddress String?  @db.Text
+  physicianPhone   String?
+  appointments     Appointment[]
+  consultations    Consultation[]
+  toothRecords     ToothRecord[]
+  billingRecords   BillingRecord[]
+  files            StoredFile[]
+  dentalReport        PatientDentalReport?
+  toothSurfaceStates ToothSurfaceState[]
+}
+
+model ToothSurfaceState {
+  id          String                @id @default(cuid())
+  patientId   String
+  patient     Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  toothFdi    String
+  /// O = occlusal/incisal center; B/L/M/D = buccal, lingual, mesial, distal
+  surface     String
+  state       ToothSurfaceStateKind @default(NONE)
+  updatedAt   DateTime              @updatedAt
+  updatedById String?
+
+  @@unique([patientId, toothFdi, surface])
+  @@index([patientId])
+}
+
+/// Clinical / consultation report aligned with paper dental record (complaint, history, exam, remarks).
+model PatientDentalReport {
+  id                   String   @id @default(cuid())
+  patientId            String   @unique
+  patient              Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  presentOralComplaint String?  @db.Text
+  familyHistory        String?  @db.Text
+  remarks              String?  @db.Text
+  /// Checklist: generalHealth, headaches, allergies, bleedingGums, heartBp, sinusTrouble, frequentColds, diabetes, selfMedication — values string or boolean as stored.
+  medicalHistory       Json?
+  /// faceLips, cheeks, tongue, palate, oropharynx, gingivae*, missingTeeth, malocclusion, previousDentalCare
+  clinicalExamination  Json?
+  updatedAt            DateTime @updatedAt
+  updatedById          String?
+}
+
+model Dentist {
+  id            String               @id @default(cuid())
+  userId        String               @unique
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licenseNumber String?
+  specialty     String?
+  workingHours  DentistWorkingHour[]
+  appointments  Appointment[]
+  consultations Consultation[]
+}
+
+model DentistWorkingHour {
+  id           String  @id @default(cuid())
+  dentistId    String
+  dentist      Dentist @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  dayOfWeek    Int
+  startMinutes Int
+  endMinutes   Int
+
+  @@index([dentistId])
+}
+
+model Appointment {
+  id          String            @id @default(cuid())
+  patientId   String
+  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  dentistId   String
+  dentist     Dentist           @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  startAt     DateTime
+  endAt       DateTime
+  status      AppointmentStatus @default(PENDING)
+  notes       String?           @db.Text
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  consultations Consultation[]
+  billingRecords BillingRecord[]
+
+  @@index([dentistId, startAt])
+}
+
+model Consultation {
+  id            String               @id @default(cuid())
+  patientId     String
+  patient       Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  dentistId     String
+  dentist       Dentist              @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  appointmentId String?
+  appointment   Appointment?         @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  status        ConsultationStatus   @default(REQUESTED)
+  videoRoomId   String?
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  notes         ConsultationNote[]
+  files         StoredFile[]
+}
+
+model ConsultationNote {
+  id                    String       @id @default(cuid())
+  consultationId        String
+  consultation          Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  diagnosis             String?      @db.Text
+  prescribedMedication  String?      @db.Text
+  notes                 String?      @db.Text
+  treatmentPlan         String?      @db.Text
+  createdById           String
+  createdBy             User         @relation("NoteAuthor", fields: [createdById], references: [id])
+  createdAt             DateTime     @default(now())
+}
+
+model ToothRecord {
+  id           String   @id @default(cuid())
+  patientId    String
+  patient      Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  toothFdi     String
+  condition    String?  @db.Text
+  procedure    String?  @db.Text
+  recordedAt   DateTime @default(now())
+  recordedById String
+  recordedBy   User     @relation("ToothRecorder", fields: [recordedById], references: [id])
+
+  @@index([patientId])
+}
+
+model StoredFile {
+  id             String        @id @default(cuid())
+  patientId      String
+  patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  consultationId String?
+  consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
+  storagePath    String
+  mimeType       String
+  originalName   String
+  sizeBytes      Int
+  uploadedById   String
+  uploadedBy     User          @relation("FileUploader", fields: [uploadedById], references: [id])
+  createdAt      DateTime      @default(now())
+}
+
+model BillingRecord {
+  id            String        @id @default(cuid())
+  patientId     String
+  patient       Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId String?
+  appointment   Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  amountCents   Int
+  status        BillingStatus @default(PENDING)
+  description   String?       @db.Text
+  createdAt     DateTime      @default(now())
+}

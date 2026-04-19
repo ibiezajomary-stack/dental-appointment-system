@@ -27,15 +27,6 @@ async function main(): Promise<void> {
         create: {
           licenseNumber: "DDS-DEMO-001",
           specialty: "General",
-          workingHours: {
-            create: [
-              { dayOfWeek: 1, startMinutes: 9 * 60, endMinutes: 17 * 60 },
-              { dayOfWeek: 2, startMinutes: 9 * 60, endMinutes: 17 * 60 },
-              { dayOfWeek: 3, startMinutes: 9 * 60, endMinutes: 17 * 60 },
-              { dayOfWeek: 4, startMinutes: 9 * 60, endMinutes: 17 * 60 },
-              { dayOfWeek: 5, startMinutes: 9 * 60, endMinutes: 17 * 60 },
-            ],
-          },
         },
       },
     },

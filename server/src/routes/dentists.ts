@@ -13,7 +13,7 @@ dentistsRouter.get("/", async (_req, res, next) => {
     const list = await prisma.dentist.findMany({
       include: {
         user: { select: { email: true } },
-        workingHours: true,
+        unavailableBlocks: true,
       },
     });
     res.json(list);
@@ -29,7 +29,7 @@ dentistsRouter.get("/:id/slots", async (req, res, next) => {
     const day = new Date(`${dateStr}T00:00:00.000Z`);
     const dentist = await prisma.dentist.findUnique({
       where: { id },
-      include: { workingHours: true },
+      include: { unavailableBlocks: true },
     });
     if (!dentist) {
       res.status(404).json({ error: "Dentist not found" });
@@ -44,7 +44,13 @@ dentistsRouter.get("/:id/slots", async (req, res, next) => {
         startAt: { gte: day, lt: dayEnd },
       },
     });
-    const slots = generateSlotsForDay(day, dentist.workingHours, existing);
+    const clinicBlocks = await prisma.clinicTimeBlock.findMany({
+      where: {
+        startAt: { lt: dayEnd },
+        endAt: { gt: day },
+      },
+    });
+    const slots = generateSlotsForDay(day, dentist.unavailableBlocks, existing, clinicBlocks);
     res.json(
       slots.map((s) => ({
         startAt: s.start.toISOString(),
@@ -56,42 +62,45 @@ dentistsRouter.get("/:id/slots", async (req, res, next) => {
   }
 });
 
-const workingHourRow = z.object({
-  dayOfWeek: z.number().int().min(0).max(6),
-  startMinutes: z.number().int().min(0).max(24 * 60 - 1),
-  endMinutes: z.number().int().min(1).max(24 * 60),
-});
+const unavailableBlockRow = z
+  .object({
+    dayOfWeek: z.number().int().min(0).max(6),
+    startMinutes: z.number().int().min(0).max(24 * 60 - 1),
+    endMinutes: z.number().int().min(1).max(24 * 60),
+  })
+  .refine((r) => r.startMinutes < r.endMinutes, { message: "startMinutes must be before endMinutes" });
 
-const putHoursSchema = z.object({
-  workingHours: z.array(workingHourRow).min(1),
+const putUnavailableSchema = z.object({
+  unavailableBlocks: z.array(unavailableBlockRow),
 });
 
 dentistsRouter.put(
-  "/me/working-hours",
+  "/me/unavailable-blocks",
   requireAuth,
   requireRole(Role.DENTIST),
   async (req: AuthedRequest, res, next) => {
     try {
-      const body = putHoursSchema.parse(req.body);
+      const body = putUnavailableSchema.parse(req.body);
       const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
       if (!dentist) {
         res.status(404).json({ error: "Dentist profile not found" });
         return;
       }
+      const creates = body.unavailableBlocks.map((w) => ({
+        dentistId: dentist.id,
+        dayOfWeek: w.dayOfWeek,
+        startMinutes: w.startMinutes,
+        endMinutes: w.endMinutes,
+      }));
       await prisma.$transaction([
-        prisma.dentistWorkingHour.deleteMany({ where: { dentistId: dentist.id } }),
-        prisma.dentistWorkingHour.createMany({
-          data: body.workingHours.map((w) => ({
-            dentistId: dentist.id,
-            dayOfWeek: w.dayOfWeek,
-            startMinutes: w.startMinutes,
-            endMinutes: w.endMinutes,
-          })),
-        }),
+        prisma.dentistUnavailableBlock.deleteMany({ where: { dentistId: dentist.id } }),
+        ...(creates.length > 0
+          ? [prisma.dentistUnavailableBlock.createMany({ data: creates })]
+          : []),
       ]);
       const updated = await prisma.dentist.findUnique({
         where: { id: dentist.id },
-        include: { workingHours: true },
+        include: { unavailableBlocks: true },
       });
       res.json(updated);
     } catch (e) {
@@ -101,20 +110,20 @@ dentistsRouter.put(
 );
 
 dentistsRouter.get(
-  "/me/working-hours",
+  "/me/unavailable-blocks",
   requireAuth,
   requireRole(Role.DENTIST),
   async (req: AuthedRequest, res, next) => {
     try {
       const dentist = await prisma.dentist.findUnique({
         where: { userId: req.userId! },
-        include: { workingHours: true },
+        include: { unavailableBlocks: true },
       });
       if (!dentist) {
         res.status(404).json({ error: "Dentist profile not found" });
         return;
       }
-      res.json(dentist.workingHours);
+      res.json(dentist.unavailableBlocks);
     } catch (e) {
       next(e);
     }

@@ -40,7 +40,8 @@ export function LoginPage() {
   }
 
   return (
-    <Container maxWidth="sm" sx={{ py: 8 }}>
+    <Container maxWidth={false} sx={{ py: 8, px: { xs: 2, sm: 3 }, width: "100%" }}>
+      <Box sx={{ maxWidth: 480, mx: "auto" }}>
       <Paper sx={{ p: 4 }}>
         <Typography variant="h5" gutterBottom>
           Sign in
@@ -85,6 +86,7 @@ export function LoginPage() {
           </Link>
         </Typography>
       </Paper>
+      </Box>
     </Container>
   );
 }

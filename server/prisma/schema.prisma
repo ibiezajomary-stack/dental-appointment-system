@@ -55,6 +55,21 @@ model User {
   consultationNotesAuthored ConsultationNote[]   @relation("NoteAuthor")
   toothRecordsRecorded      ToothRecord[]        @relation("ToothRecorder")
   filesUploaded             StoredFile[]         @relation("FileUploader")
+  clinicTimeBlocksCreated   ClinicTimeBlock[]    @relation("ClinicTimeBlockCreator")
+}
+
+/// Clinic-wide unavailability: no bookings may start during [startAt, endAt).
+model ClinicTimeBlock {
+  id          String   @id @default(cuid())
+  startAt     DateTime
+  endAt       DateTime
+  reason      String?  @db.Text
+  createdAt   DateTime @default(now())
+  createdById String?
+  createdBy   User?    @relation("ClinicTimeBlockCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([startAt])
+  @@index([endAt])
 }
 
 model Patient {
@@ -120,12 +135,13 @@ model Dentist {
   user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   licenseNumber String?
   specialty     String?
-  workingHours  DentistWorkingHour[]
-  appointments  Appointment[]
-  consultations Consultation[]
+  unavailableBlocks DentistUnavailableBlock[]
+  appointments      Appointment[]
+  consultations     Consultation[]
 }
 
-model DentistWorkingHour {
+/// Recurring weekly intervals when this dentist does not accept appointments (minutes from local midnight for that weekday).
+model DentistUnavailableBlock {
   id           String  @id @default(cuid())
   dentistId    String
   dentist      Dentist @relation(fields: [dentistId], references: [id], onDelete: Cascade)

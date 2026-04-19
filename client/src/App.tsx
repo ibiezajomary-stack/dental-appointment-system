@@ -12,7 +12,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { PatientShell } from "./modules/patient";
 import { DentistShell } from "./modules/dentist";
-import { AdminPage } from "./pages/AdminPage";
+import { AdminShell } from "./pages/admin/AdminShell";
 
 const theme = createTheme({
   palette: {
@@ -45,7 +45,7 @@ function HomeRedirect() {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role === "PATIENT") return <Navigate to="/patient/profile" replace />;
+  if (user.role === "PATIENT") return <Navigate to="/patient" replace />;
   if (user.role === "DENTIST") return <Navigate to="/dentist" replace />;
   return <Navigate to="/admin" replace />;
 }
@@ -69,7 +69,7 @@ function AppRoutes() {
       </Route>
 
       <Route element={<RequireAuth roles={["ADMIN"]} />}>
-        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin/*" element={<AdminShell />} />
       </Route>
 
       <Route path="*" element={<Typography sx={{ p: 4 }}>Page not found</Typography>} />
@@ -81,11 +81,13 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </BrowserRouter>
+      <Box component="div" sx={{ width: "100%", minHeight: "100vh" }}>
+        <BrowserRouter>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </BrowserRouter>
+      </Box>
     </ThemeProvider>
   );
 }

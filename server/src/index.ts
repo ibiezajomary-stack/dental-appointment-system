@@ -14,6 +14,7 @@ import { consultationsRouter } from "./routes/consultations.js";
 import { toothRecordsRouter } from "./routes/toothRecords.js";
 import { filesRouter } from "./routes/files.js";
 import { billingRouter } from "./routes/billing.js";
+import { adminClinicRouter } from "./routes/adminClinic.js";
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use("/api/consultations", consultationsRouter);
 app.use("/api", toothRecordsRouter);
 app.use("/api/files", filesRouter);
 app.use("/api/billing", billingRouter);
+app.use("/api/admin", adminClinicRouter);
 
 app.use(errorHandler);
 

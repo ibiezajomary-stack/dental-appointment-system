@@ -1,5 +1,9 @@
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
+export function getApiBase(): string {
+  return apiBase;
+}
+
 export function getToken(): string | null {
   return localStorage.getItem("token");
 }

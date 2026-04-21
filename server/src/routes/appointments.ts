@@ -4,8 +4,13 @@ import { AppointmentStatus, Role } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
+import crypto from "node:crypto";
 
 export const appointmentsRouter = Router();
+
+function isVirtualFromNotes(notes: string | undefined): boolean {
+  return /Visit:\s*Virtual/i.test(notes ?? "");
+}
 
 const createSchema = z.object({
   dentistId: z.string().min(1),
@@ -60,6 +65,24 @@ appointmentsRouter.post("/", requireAuth, requireRole(Role.PATIENT), async (req:
         },
       });
     });
+
+    // If this appointment is virtual, create a linked consultation record (shown in Virtual Consultation pages).
+    if (isVirtualFromNotes(body.notes)) {
+      // Safe to run outside the transaction since clash-check already happened; consult creation doesn't affect slot availability.
+      const apptId = created.id;
+      const exists = await prisma.consultation.findFirst({ where: { appointmentId: apptId } });
+      if (!exists) {
+        await prisma.consultation.create({
+          data: {
+            patientId: created.patientId,
+            dentistId: created.dentistId,
+            appointmentId: apptId,
+            status: "SCHEDULED",
+            videoRoomId: `dental-${crypto.randomUUID().slice(0, 8)}`,
+          },
+        });
+      }
+    }
 
     res.status(201).json(created);
   } catch (e) {

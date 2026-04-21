@@ -12,3 +12,4 @@ server/prisma/*.db-journal
 coverage
 .vscode/*
 !.vscode/extensions.json
+server/uploads/

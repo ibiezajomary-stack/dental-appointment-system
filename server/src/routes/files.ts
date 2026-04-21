@@ -1,27 +1,19 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
 import { Role } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { config } from "../lib/config.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 
 export const filesRouter = Router();
 
+function toBytes(buf: Buffer): Uint8Array<ArrayBuffer> {
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+  return new Uint8Array<ArrayBuffer>(ab);
+}
+
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: async (_req, _file, cb) => {
-      await fs.mkdir(config.uploadDir, { recursive: true });
-      cb(null, config.uploadDir);
-    },
-    filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname) || "";
-      cb(null, `${randomUUID()}${ext}`);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 12 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const ok = /^image\/(jpeg|png|gif|webp)$|^application\/pdf$/.test(file.mimetype);
@@ -54,14 +46,12 @@ filesRouter.post(
       });
       const patient = await prisma.patient.findUnique({ where: { id: meta.patientId } });
       if (!patient) {
-        await fs.unlink(req.file.path).catch(() => {});
         res.status(404).json({ error: "Patient not found" });
         return;
       }
       const isPatient = req.role === Role.PATIENT && patient.userId === req.userId;
       const isStaff = req.role === Role.DENTIST || req.role === Role.ADMIN;
       if (!isPatient && !isStaff) {
-        await fs.unlink(req.file.path).catch(() => {});
         res.status(403).json({ error: "Forbidden" });
         return;
       }
@@ -69,10 +59,10 @@ filesRouter.post(
         data: {
           patientId: meta.patientId,
           consultationId: meta.consultationId,
-          storagePath: req.file.path,
+          blob: toBytes(req.file.buffer),
           mimeType: req.file.mimetype,
           originalName: req.file.originalname,
-          sizeBytes: req.file.size,
+          sizeBytes: req.file.buffer.length,
           uploadedById: req.userId!,
         },
       });
@@ -106,7 +96,17 @@ filesRouter.get("/:id/download", requireAuth, async (req: AuthedRequest, res, ne
       res.status(403).json({ error: "Forbidden" });
       return;
     }
-    res.download(row.storagePath, row.originalName);
+    if (row.blob) {
+      res.setHeader("Content-Type", row.mimeType);
+      res.setHeader("Content-Disposition", `attachment; filename="${row.originalName}"`);
+      res.send(Buffer.from(row.blob));
+      return;
+    }
+    if (row.storagePath) {
+      res.download(row.storagePath, row.originalName);
+      return;
+    }
+    res.status(500).json({ error: "File data missing" });
   } catch (e) {
     next(e);
   }

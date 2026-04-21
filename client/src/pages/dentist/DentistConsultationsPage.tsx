@@ -35,9 +35,23 @@ type Row = {
   updatedAt: string;
   startedAt: string | null;
   endedAt: string | null;
+  appointmentId?: string | null;
   patient: { firstName: string; lastName: string; id: string };
-  appointment: { startAt: string } | null;
+  appointment: { startAt: string; notes: string | null } | null;
 };
+
+type ApptRow = {
+  id: string;
+  startAt: string;
+  endAt: string;
+  status: string;
+  notes: string | null;
+  patient: { firstName: string; lastName: string; id: string };
+};
+
+function isVirtualFromNotes(notes: string | null | undefined): boolean {
+  return /Visit:\s*Virtual/i.test(notes ?? "");
+}
 
 function isSameDay(a: Date, b: Date): boolean {
   return (
@@ -80,11 +94,6 @@ function statusTextColor(status: string): string {
   }
 }
 
-function scheduleDate(c: Row): Date {
-  const raw = c.appointment?.startAt ?? c.createdAt;
-  return new Date(raw);
-}
-
 function formatTableDate(d: Date): string {
   return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
 }
@@ -115,6 +124,7 @@ const FILTER_ALL = "ALL";
 export function DentistConsultationsPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<Row[]>([]);
+  const [appts, setAppts] = useState<ApptRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(FILTER_ALL);
@@ -127,8 +137,12 @@ export function DentistConsultationsPage() {
 
   async function load() {
     try {
-      const data = await api<Row[]>("/api/consultations");
-      setRows(data);
+      const [consultations, appointments] = await Promise.all([
+        api<Row[]>("/api/consultations"),
+        api<ApptRow[]>("/api/appointments"),
+      ]);
+      setRows(consultations);
+      setAppts(appointments);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     }
@@ -151,15 +165,31 @@ export function DentistConsultationsPage() {
     return [...rows].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
   }, [rows]);
 
-  const filteredRows = useMemo(() => {
+  const consultationByAppointmentId = useMemo(() => {
+    const m = new Map<string, Row>();
+    for (const r of rows) {
+      if (r.appointmentId) m.set(r.appointmentId, r);
+    }
+    return m;
+  }, [rows]);
+
+  const virtualAppointments = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (statusFilter !== FILTER_ALL && r.status !== statusFilter) return false;
+    return appts.filter((a) => {
+      if (!isVirtualFromNotes(a.notes)) return false;
+      if (statusFilter !== FILTER_ALL && a.status !== statusFilter) return false;
       if (!q) return true;
-      const name = `${r.patient.firstName} ${r.patient.lastName}`.toLowerCase();
+      const name = `${a.patient.firstName} ${a.patient.lastName}`.toLowerCase();
       return name.includes(q);
     });
-  }, [rows, search, statusFilter]);
+  }, [appts, search, statusFilter]);
+
+  const todaysRows = useMemo(() => {
+    const today = new Date();
+    return virtualAppointments
+      .filter((a) => isSameDay(new Date(a.startAt), today))
+      .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+  }, [virtualAppointments]);
 
   async function setStatus(id: string, status: string) {
     try {
@@ -170,6 +200,24 @@ export function DentistConsultationsPage() {
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Update failed");
+    }
+  }
+
+  async function startCall(id: string) {
+    try {
+      await api(`/api/consultations/${encodeURIComponent(id)}/start-call`, { method: "POST" });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to start call");
+    }
+  }
+
+  async function startCallForAppointment(appointmentId: string) {
+    try {
+      await api(`/api/consultations/by-appointment/${encodeURIComponent(appointmentId)}/start-call`, { method: "POST" });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to start call");
     }
   }
 
@@ -310,7 +358,86 @@ export function DentistConsultationsPage() {
         </FormControl>
       </Box>
 
-      {/* All Virtual Appointments table */}
+      {/* Today's schedule (from virtual appointments) */}
+      <Paper
+        elevation={0}
+        sx={{
+          mb: 3,
+          borderRadius: 2,
+          overflow: "hidden",
+          border: "1px solid",
+          borderColor: "divider",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+          bgcolor: "background.paper",
+        }}
+      >
+        <Box sx={{ px: 2, py: 2, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Typography variant="subtitle1" fontWeight={700}>
+            Today&apos;s virtual schedule
+          </Typography>
+        </Box>
+        <Box sx={{ p: 2 }}>
+          {todaysRows.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No virtual appointments scheduled for today.
+            </Typography>
+          ) : (
+            <Box sx={{ display: "grid", gap: 1.25 }}>
+              {todaysRows.map((a) => {
+                const d = new Date(a.startAt);
+                const c = consultationByAppointmentId.get(a.id) ?? null;
+                const status = c?.status ?? a.status;
+                return (
+                  <Box
+                    key={a.id}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 2,
+                      flexWrap: "wrap",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 2,
+                      px: 1.75,
+                      py: 1.25,
+                    }}
+                  >
+                    <Box>
+                      <Typography fontWeight={800}>
+                        {a.patient.firstName} {a.patient.lastName}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {formatTableTime(d)} •{" "}
+                        <span style={{ color: statusTextColor(status), fontWeight: 700 }}>
+                          {statusDisplay(status)}
+                        </span>
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
+                      {c && (
+                        <Button size="small" variant="outlined" onClick={() => setDetailFor(c.id)}>
+                          Details
+                        </Button>
+                      )}
+                      <Button
+                        size="small"
+                        variant="contained"
+                        disabled={status === "IN_PROGRESS"}
+                        onClick={() => void startCallForAppointment(a.id)}
+                      >
+                        Start call
+                      </Button>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+        </Box>
+      </Paper>
+
+      {/* All Virtual Appointments table (from patient-booked appointments) */}
       <Paper
         elevation={0}
         sx={{
@@ -348,7 +475,7 @@ export function DentistConsultationsPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredRows.length === 0 ? (
+              {virtualAppointments.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5}>
                     <Typography color="text.secondary" sx={{ py: 2 }}>
@@ -357,32 +484,50 @@ export function DentistConsultationsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredRows.map((r) => {
-                  const d = scheduleDate(r);
+                virtualAppointments.map((a) => {
+                  const d = new Date(a.startAt);
+                  const c = consultationByAppointmentId.get(a.id) ?? null;
+                  const status = c?.status ?? a.status;
                   return (
-                    <TableRow key={r.id} hover>
+                    <TableRow key={a.id} hover>
                       <TableCell>
                         <Typography fontWeight={700}>
-                          {r.patient.firstName} {r.patient.lastName}
+                          {a.patient.firstName} {a.patient.lastName}
                         </Typography>
                       </TableCell>
                       <TableCell>{formatTableDate(d)}</TableCell>
                       <TableCell>{formatTableTime(d)}</TableCell>
                       <TableCell>
-                        <Typography sx={{ color: statusTextColor(r.status), fontWeight: 600 }}>
-                          {statusDisplay(r.status)}
+                        <Typography sx={{ color: statusTextColor(status), fontWeight: 600 }}>
+                          {statusDisplay(status)}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Link
-                          component="button"
-                          type="button"
-                          underline="hover"
-                          sx={{ cursor: "pointer", fontWeight: 600 }}
-                          onClick={() => setDetailFor(r.id)}
-                        >
-                          Details
-                        </Link>
+                        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                          {c ? (
+                            <Link
+                              component="button"
+                              type="button"
+                              underline="hover"
+                              sx={{ cursor: "pointer", fontWeight: 600 }}
+                              onClick={() => setDetailFor(c.id)}
+                            >
+                              Details
+                            </Link>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">
+                              Not started
+                            </Typography>
+                          )}
+                          <Button
+                            size="small"
+                            variant="contained"
+                            disabled={status === "IN_PROGRESS"}
+                            onClick={() => void startCallForAppointment(a.id)}
+                          >
+                            Start call
+                          </Button>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   );
@@ -421,6 +566,13 @@ export function DentistConsultationsPage() {
                   Join video
                 </Button>
               )}
+              <Button
+                variant="contained"
+                sx={{ mt: detailRow.videoRoomId ? 0 : 1, mb: 2, ml: detailRow.videoRoomId ? 1 : 0 }}
+                onClick={() => void startCall(detailRow.id)}
+              >
+                Start call
+              </Button>
               <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
                 <Button size="small" variant="outlined" onClick={() => void setStatus(detailRow.id, "SCHEDULED")}>
                   Mark confirmed

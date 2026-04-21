@@ -34,6 +34,16 @@ enum BillingStatus {
   CANCELLED
 }
 
+enum PaymentProvider {
+  GCASH
+}
+
+enum PaymentVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 /// Per-surface charting on odontogram (paper-style schematic).
 enum ToothSurfaceStateKind {
   NONE
@@ -56,6 +66,7 @@ model User {
   toothRecordsRecorded      ToothRecord[]        @relation("ToothRecorder")
   filesUploaded             StoredFile[]         @relation("FileUploader")
   clinicTimeBlocksCreated   ClinicTimeBlock[]    @relation("ClinicTimeBlockCreator")
+  paymentsVerified          AppointmentPayment[] @relation("PaymentVerifier")
 }
 
 /// Clinic-wide unavailability: no bookings may start during [startAt, endAt).
@@ -96,6 +107,22 @@ model Patient {
   files            StoredFile[]
   dentalReport        PatientDentalReport?
   toothSurfaceStates ToothSurfaceState[]
+  appointmentPayments AppointmentPayment[]
+  idDocument       PatientIdDocument?
+}
+
+model PatientIdDocument {
+  id              String   @id @default(cuid())
+  patientId        String   @unique
+  patient          Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  frontBlob        Bytes?
+  frontMimeType    String?
+  frontOriginalName String?
+  backBlob         Bytes?
+  backMimeType     String?
+  backOriginalName String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model ToothSurfaceState {
@@ -135,9 +162,33 @@ model Dentist {
   user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   licenseNumber String?
   specialty     String?
+  displayName   String?
+  phone         String?
+  bio           String?              @db.Text
   unavailableBlocks DentistUnavailableBlock[]
+  paymentMethods    DentistPaymentMethod[]
   appointments      Appointment[]
   consultations     Consultation[]
+  appointmentPayments AppointmentPayment[]
+}
+
+model DentistPaymentMethod {
+  id            String          @id @default(cuid())
+  dentistId     String
+  dentist       Dentist         @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  provider      PaymentProvider
+  /// Legacy path for old uploads; new uploads use `qrBlob`.
+  qrStoragePath String?
+  qrBlob        Bytes?
+  /// GCash account number/phone shown to patients (e.g., 09xxxxxxxxx).
+  phoneNumber   String?
+  mimeType      String
+  originalName  String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([dentistId, provider])
+  @@index([dentistId])
 }
 
 /// Recurring weekly intervals when this dentist does not accept appointments (minutes from local midnight for that weekday).
@@ -164,10 +215,35 @@ model Appointment {
   notes       String?           @db.Text
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+  payment     AppointmentPayment?
   consultations Consultation[]
   billingRecords BillingRecord[]
 
   @@index([dentistId, startAt])
+}
+
+model AppointmentPayment {
+  id           String                    @id @default(cuid())
+  appointmentId String                  @unique
+  appointment  Appointment               @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patientId    String
+  patient      Patient                   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  dentistId    String
+  dentist      Dentist                   @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  amountCents  Int
+  status       PaymentVerificationStatus @default(PENDING)
+  /// Legacy path for old uploads; new uploads use `proofBlob`.
+  proofStoragePath String?
+  proofBlob        Bytes?
+  proofMimeType    String
+  proofOriginalName String
+  createdAt    DateTime                  @default(now())
+  verifiedAt   DateTime?
+  verifiedById String?
+  verifiedBy   User?                     @relation("PaymentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@index([dentistId, createdAt])
+  @@index([patientId, createdAt])
 }
 
 model Consultation {
@@ -221,7 +297,9 @@ model StoredFile {
   patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
   consultationId String?
   consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
-  storagePath    String
+  /// Legacy path for old uploads; new uploads use `blob`.
+  storagePath    String?
+  blob           Bytes?
   mimeType       String
   originalName   String
   sizeBytes      Int

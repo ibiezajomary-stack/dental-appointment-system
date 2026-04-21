@@ -62,6 +62,65 @@ dentistsRouter.get("/:id/slots", async (req, res, next) => {
   }
 });
 
+const dentistProfilePatch = z.object({
+  displayName: z.string().min(1).optional().nullable(),
+  phone: z.string().optional().nullable(),
+  licenseNumber: z.string().optional().nullable(),
+  specialty: z.string().optional().nullable(),
+  bio: z.string().optional().nullable(),
+});
+
+dentistsRouter.get(
+  "/me/profile",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const dentist = await prisma.dentist.findUnique({
+        where: { userId: req.userId! },
+        include: { user: { select: { email: true } } },
+      });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      res.json(dentist);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+dentistsRouter.patch(
+  "/me/profile",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const patch = dentistProfilePatch.parse(req.body);
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      const updated = await prisma.dentist.update({
+        where: { id: dentist.id },
+        data: {
+          displayName: patch.displayName ?? undefined,
+          phone: patch.phone ?? undefined,
+          licenseNumber: patch.licenseNumber ?? undefined,
+          specialty: patch.specialty ?? undefined,
+          bio: patch.bio ?? undefined,
+        },
+        include: { user: { select: { email: true } } },
+      });
+      res.json(updated);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 const unavailableBlockRow = z
   .object({
     dayOfWeek: z.number().int().min(0).max(6),

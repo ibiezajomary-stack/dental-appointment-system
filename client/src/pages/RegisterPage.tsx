@@ -15,9 +15,10 @@ import {
   Typography,
 } from "@mui/material";
 import { useAuth } from "../auth/AuthContext";
+import { api, setToken } from "../lib/api";
 
 export function RegisterPage() {
-  const { register, user } = useAuth();
+  const { refresh, user } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,6 +27,8 @@ export function RegisterPage() {
   const [middleName, setMiddleName] = useState("");
   const [sex, setSex] = useState("");
   const [age, setAge] = useState("");
+  const [idFront, setIdFront] = useState<File | null>(null);
+  const [idBack, setIdBack] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -45,14 +48,20 @@ export function RegisterPage() {
         setBusy(false);
         return;
       }
-      await register({
-        email,
-        password,
-        role: "PATIENT",
-        firstName: fn,
-        lastName: lastName.trim(),
-        phone: undefined,
+      const fd = new FormData();
+      fd.set("email", email);
+      fd.set("password", password);
+      fd.set("firstName", fn);
+      fd.set("lastName", lastName.trim());
+      if (idFront) fd.set("idFront", idFront);
+      if (idBack) fd.set("idBack", idBack);
+
+      const res = await api<{ token: string; user: unknown }>("/api/auth/register/patient", {
+        method: "POST",
+        body: fd,
       });
+      setToken(res.token);
+      await refresh();
       navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -110,7 +119,6 @@ export function RegisterPage() {
                 </MenuItem>
                 <MenuItem value="Female">Female</MenuItem>
                 <MenuItem value="Male">Male</MenuItem>
-                <MenuItem value="Other">Other</MenuItem>
               </Select>
             </FormControl>
             <TextField
@@ -138,7 +146,18 @@ export function RegisterPage() {
               mb: 1,
             }}
           >
-            📷 Upload photo of valid ID (Front)
+            <Button component="label" variant="outlined" disabled={busy}>
+              Choose file
+              <input
+                hidden
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setIdFront(e.target.files?.[0] ?? null)}
+              />
+            </Button>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              {idFront ? idFront.name : "No file selected"}
+            </Typography>
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
             Valid ID (back)
@@ -155,11 +174,21 @@ export function RegisterPage() {
               mb: 2,
             }}
           >
-            📷 Upload photo of valid ID (Back)
+            <Button component="label" variant="outlined" disabled={busy}>
+              Choose file
+              <input
+                hidden
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setIdBack(e.target.files?.[0] ?? null)}
+              />
+            </Button>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              {idBack ? idBack.name : "No file selected"}
+            </Typography>
           </Box>
           <Typography variant="caption" color="text.secondary">
-            ID uploads are optional in this demo; file storage can be connected later. Sex, age, and ID are not stored
-            until backend support is added.
+            ID uploads are optional. Accepted: images or PDF (max 12MB each).
           </Typography>
           <TextField
             label="Email"

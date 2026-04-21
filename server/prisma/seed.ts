@@ -27,6 +27,7 @@ async function main(): Promise<void> {
         create: {
           licenseNumber: "DDS-DEMO-001",
           specialty: "General",
+          displayName: "Dr. Demo Dentist",
         },
       },
     },

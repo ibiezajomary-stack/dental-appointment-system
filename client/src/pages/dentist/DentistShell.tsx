@@ -16,6 +16,9 @@ import { DentistAppointmentsPage } from "./DentistAppointmentsPage";
 import { DentistConsultationsPage } from "./DentistConsultationsPage";
 import { DentistChartPage } from "./DentistChartPage";
 import { DentistHoursPage } from "./DentistHoursPage";
+import { DentistPaymentsPage } from "./DentistPaymentsPage";
+import { DentistGcashQrPage } from "./DentistGcashQrPage";
+import { DentistProfilePage } from "./DentistProfilePage";
 import { DentistPatientsPage } from "./DentistPatientsPage";
 import { DentistPatientDetailPage } from "./DentistPatientDetailPage";
 import { DentistNotificationsPage } from "./DentistNotificationsPage";
@@ -27,6 +30,9 @@ const NAV = [
   { label: "Virtual consultation", to: "/dentist/consultations" },
   { label: "Patient history", to: "/dentist/patients" },
   { label: "Unavailable times", to: "/dentist/hours" },
+  { label: "Payments", to: "/dentist/payments" },
+  { label: "GCash QR", to: "/dentist/payment-method" },
+  { label: "Profile", to: "/dentist/profile" },
   { label: "Notification", to: "/dentist/notifications" },
 ] as const;
 
@@ -123,6 +129,9 @@ export function DentistShell() {
             <Route path="patients" element={<DentistPatientsPage />} />
             <Route path="patients/:id" element={<DentistPatientDetailPage />} />
             <Route path="hours" element={<DentistHoursPage />} />
+            <Route path="payments" element={<DentistPaymentsPage />} />
+            <Route path="payment-method" element={<DentistGcashQrPage />} />
+            <Route path="profile" element={<DentistProfilePage />} />
             <Route path="notifications" element={<DentistNotificationsPage />} />
             <Route path="chart" element={<DentistChartPage />} />
             <Route path="*" element={<Typography sx={{ p: 2 }}>Page not found</Typography>} />

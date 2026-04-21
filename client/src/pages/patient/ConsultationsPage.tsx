@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import {
   Alert,
   Box,
   Button,
-  FormControl,
-  InputLabel,
-  MenuItem,
   Paper,
-  Select,
   Table,
   TableBody,
   TableCell,
@@ -20,25 +17,27 @@ import { api } from "../../lib/api";
 type Row = {
   id: string;
   status: string;
+  videoRoomId: string | null;
+  startedAt: string | null;
+  updatedAt: string;
   dentist: { user: { email: string } };
+  appointment: { startAt: string } | null;
 };
 
-const WAITING_STATUSES = new Set(["REQUESTED", "SCHEDULED", "IN_PROGRESS"]);
+const ACTIVE_STATUSES = new Set(["SCHEDULED", "IN_PROGRESS"]);
+const JOIN_STATUSES = new Set(["IN_PROGRESS"]);
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
 
 export function ConsultationsPage() {
-  const [dentists, setDentists] = useState<{ id: string; user: { email: string } }[]>([]);
-  const [dentistId, setDentistId] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void api<{ id: string; user: { email: string } }[]>("/api/dentists")
-      .then((d) => {
-        setDentists(d);
-        if (d[0]) setDentistId(d[0].id);
-      })
-      .catch(() => {});
-  }, []);
 
   async function load() {
     try {
@@ -53,81 +52,69 @@ export function ConsultationsPage() {
     void load();
   }, []);
 
-  const showWaitingBanner = useMemo(
-    () => rows.some((r) => WAITING_STATUSES.has(r.status)),
-    [rows],
-  );
-
-  async function requestConsult() {
-    if (!dentistId) return;
-    setError(null);
-    try {
-      await api("/api/consultations", {
-        method: "POST",
-        body: JSON.stringify({ dentistId }),
-      });
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Request failed");
-    }
-  }
+  const active = useMemo(() => {
+    const list = rows.filter((r) => ACTIVE_STATUSES.has(r.status) && Boolean(r.appointment));
+    if (list.length === 0) return null;
+    const now = new Date();
+    const todays = list.filter((r) => {
+      const t = r.appointment?.startAt;
+      if (!t) return false;
+      return isSameDay(new Date(t), now);
+    });
+    const pickFrom = todays.length > 0 ? todays : list;
+    return [...pickFrom].sort((a, b) => {
+      const ta = new Date(a.appointment?.startAt ?? a.startedAt ?? a.updatedAt).getTime();
+      const tb = new Date(b.appointment?.startAt ?? b.startedAt ?? b.updatedAt).getTime();
+      return tb - ta;
+    })[0];
+  }, [rows]);
 
   return (
     <Box>
-      {showWaitingBanner && (
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 800,
-            color: "secondary.main",
-            mb: 3,
-            textAlign: { xs: "left", md: "left" },
-          }}
-        >
-          Waiting for doctor for call
-        </Typography>
-      )}
-
-      <Paper sx={{ p: 2, borderRadius: 3 }}>
-        <Typography variant="h6" gutterBottom>
+      <Paper sx={{ p: 2, borderRadius: 3, mb: 2 }}>
+        <Typography variant="h6" fontWeight={800} gutterBottom>
           Virtual consultation
         </Typography>
         <Typography variant="body2" color="text.secondary" paragraph>
-          Request a virtual visit. When the dentist is ready, you will join from here or follow the link they send.
+          Your call session will appear here when the dentist starts the consultation. You can join once it is started.
         </Typography>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
         )}
-        <FormControl sx={{ minWidth: 280, mr: 2, mb: 2 }}>
-          <InputLabel id="dc-dentist">Dentist</InputLabel>
-          <Select
-            labelId="dc-dentist"
-            label="Dentist"
-            value={dentistId}
-            onChange={(e) => setDentistId(e.target.value)}
-          >
-            {dentists.map((d) => (
-              <MenuItem key={d.id} value={d.id}>
-                {d.user.email}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <Button
-          variant="contained"
-          sx={{ mr: 1, mb: 2 }}
-          onClick={() => void requestConsult()}
-          disabled={!dentistId}
-        >
-          Request consultation
-        </Button>
+        {active ? (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              Dentist: {active.dentist.user.email}
+            </Typography>
+            {JOIN_STATUSES.has(active.status) ? (
+              <Button component={RouterLink} to={`/patient/consultations/${active.id}/video`} variant="contained">
+                Join call
+              </Button>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                Waiting for doctor to start the call…
+              </Typography>
+            )}
+          </Box>
+        ) : (
+          <Typography variant="body2" color="text.secondary">
+            No active call session right now.
+          </Typography>
+        )}
+      </Paper>
+
+      <Paper sx={{ p: 2, borderRadius: 3 }}>
+        <Typography variant="subtitle1" fontWeight={800} gutterBottom>
+          Consultation history
+        </Typography>
         <Table size="small">
           <TableHead>
             <TableRow>
               <TableCell>Dentist</TableCell>
               <TableCell>Status</TableCell>
+              <TableCell />
             </TableRow>
           </TableHead>
           <TableBody>
@@ -135,6 +122,13 @@ export function ConsultationsPage() {
               <TableRow key={r.id}>
                 <TableCell>{r.dentist.user.email}</TableCell>
                 <TableCell>{r.status}</TableCell>
+                <TableCell>
+                  {r.videoRoomId && JOIN_STATUSES.has(r.status) && (
+                    <Button component={RouterLink} to={`/patient/consultations/${r.id}/video`} size="small">
+                      Join
+                    </Button>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -168,6 +168,94 @@ consultationsRouter.patch(
   },
 );
 
+// Dentist starts the call session (patient can only join once started).
+consultationsRouter.post(
+  "/:id/start-call",
+  requireAuth,
+  requireRole(Role.DENTIST, Role.ADMIN),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const id = typeof req.params.id === "string" ? req.params.id : req.params.id[0];
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      const existing = await prisma.consultation.findUnique({ where: { id } });
+      if (!existing) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      if (req.role === Role.DENTIST && existing.dentistId !== dentist?.id) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      const updated = await prisma.consultation.update({
+        where: { id },
+        data: {
+          status: ConsultationStatus.IN_PROGRESS,
+          startedAt: existing.startedAt ?? new Date(),
+          videoRoomId: existing.videoRoomId ?? `dental-${randomUUID().slice(0, 8)}`,
+        },
+      });
+      res.json(updated);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Dentist starts the call session for a patient-booked virtual appointment.
+// If a consultation record doesn't exist yet, it will be created and linked to the appointment.
+consultationsRouter.post(
+  "/by-appointment/:appointmentId/start-call",
+  requireAuth,
+  requireRole(Role.DENTIST, Role.ADMIN),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const appointmentId =
+        typeof req.params.appointmentId === "string" ? req.params.appointmentId : req.params.appointmentId[0];
+
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (req.role === Role.DENTIST && !dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+
+      const appt = await prisma.appointment.findUnique({ where: { id: appointmentId } });
+      if (!appt) {
+        res.status(404).json({ error: "Appointment not found" });
+        return;
+      }
+      if (req.role === Role.DENTIST && appt.dentistId !== dentist!.id) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+
+      const existing = await prisma.consultation.findFirst({ where: { appointmentId } });
+      const c =
+        existing ??
+        (await prisma.consultation.create({
+          data: {
+            patientId: appt.patientId,
+            dentistId: appt.dentistId,
+            appointmentId,
+            status: ConsultationStatus.SCHEDULED,
+            videoRoomId: `dental-${randomUUID().slice(0, 8)}`,
+          },
+        }));
+
+      const updated = await prisma.consultation.update({
+        where: { id: c.id },
+        data: {
+          status: ConsultationStatus.IN_PROGRESS,
+          startedAt: c.startedAt ?? new Date(),
+          videoRoomId: c.videoRoomId ?? `dental-${randomUUID().slice(0, 8)}`,
+        },
+      });
+      res.json(updated);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 consultationsRouter.post(
   "/:id/notes",
   requireAuth,

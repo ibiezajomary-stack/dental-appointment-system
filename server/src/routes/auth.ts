@@ -1,5 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import multer from "multer";
 import { z } from "zod";
 import { Role } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
@@ -32,6 +33,100 @@ const loginSchema = z.object({
 });
 
 export const authRouter = Router();
+
+function toBytes(buf: Buffer): Uint8Array<ArrayBuffer> {
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+  return new Uint8Array<ArrayBuffer>(ab);
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok = /^image\/(jpeg|png|gif|webp)$|^application\/pdf$/.test(file.mimetype);
+    if (!ok) {
+      cb(new Error("Only images (JPEG, PNG, GIF, WebP) or PDF allowed"));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+const registerPatientSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+});
+
+authRouter.post(
+  "/register/patient",
+  upload.fields([
+    { name: "idFront", maxCount: 1 },
+    { name: "idBack", maxCount: 1 },
+  ]),
+  async (req, res, next) => {
+    try {
+      const parsed = registerPatientSchema.parse(req.body);
+      const exists = await prisma.user.findUnique({ where: { email: parsed.email } });
+      if (exists) {
+        res.status(409).json({ error: "Email already registered" });
+        return;
+      }
+
+      const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const front = files?.idFront?.[0];
+      const back = files?.idBack?.[0];
+
+      const passwordHash = await bcrypt.hash(parsed.password, 12);
+      const user = await prisma.user.create({
+        data: {
+          email: parsed.email,
+          passwordHash,
+          role: Role.PATIENT,
+          patient: {
+            create: {
+              firstName: parsed.firstName,
+              lastName: parsed.lastName,
+              idDocument: {
+                create: {
+                  ...(front && {
+                    frontBlob: toBytes(front.buffer),
+                    frontMimeType: front.mimetype,
+                    frontOriginalName: front.originalname,
+                  }),
+                  ...(back && {
+                    backBlob: toBytes(back.buffer),
+                    backMimeType: back.mimetype,
+                    backOriginalName: back.originalname,
+                  }),
+                },
+              },
+            },
+          },
+        },
+        include: {
+          patient: true,
+          dentist: true,
+        },
+      });
+
+      const token = signToken({ sub: user.id, role: user.role });
+      res.status(201).json({
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          patient: user.patient,
+          dentist: user.dentist,
+        },
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 authRouter.post("/register", async (req, res, next) => {
   try {

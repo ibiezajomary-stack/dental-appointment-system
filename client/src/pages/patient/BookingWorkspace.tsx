@@ -24,7 +24,7 @@ import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import dayjs, { type Dayjs } from "dayjs";
 import { useLocation, useNavigate } from "react-router-dom";
-import { api } from "../../lib/api";
+import { api, getApiBase, getToken } from "../../lib/api";
 
 type Dentist = {
   id: string;
@@ -48,6 +48,14 @@ type PatientMe = {
   lastName: string;
   phone?: string | null;
   address?: string | null;
+};
+
+type DentistGcash = {
+  provider: "GCASH";
+  phoneNumber?: string | null;
+  originalName: string;
+  qrUrl: string;
+  updatedAt: string;
 };
 
 const DENTAL_SERVICES: { id: string; label: string; price: string }[] = [
@@ -138,6 +146,10 @@ export function BookingWorkspace({
   const [visitMode, setVisitMode] = useState<"in-person" | "virtual">("in-person");
   const [comments, setComments] = useState("");
   const [photoName, setPhotoName] = useState<string | null>(null);
+  const [paymentProof, setPaymentProof] = useState<File | null>(null);
+  const [gcash, setGcash] = useState<DentistGcash | null>(null);
+  const [gcashError, setGcashError] = useState<string | null>(null);
+  const [amountPhp, setAmountPhp] = useState("500");
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -150,6 +162,8 @@ export function BookingWorkspace({
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load dentists"));
   }, []);
+
+  const onlyDentist = useMemo(() => dentists[0] ?? null, [dentists]);
 
   useEffect(() => {
     void api<PatientMe>("/api/patients/me")
@@ -183,6 +197,15 @@ export function BookingWorkspace({
   }, [location.state, location.pathname, navigate]);
 
   const dateStr = date?.format("YYYY-MM-DD") ?? "";
+
+  useEffect(() => {
+    if (!dentistId) return;
+    setGcash(null);
+    setGcashError(null);
+    void api<DentistGcash>(`/api/public-payment-methods/dentists/${encodeURIComponent(dentistId)}/gcash`)
+      .then(setGcash)
+      .catch((e) => setGcashError(e instanceof Error ? e.message : "No GCash method"));
+  }, [dentistId]);
 
   const loadSlots = useCallback(async () => {
     if (!dentistId || !dateStr) return;
@@ -229,6 +252,10 @@ export function BookingWorkspace({
       setError("Choose a dentist, date, and available time.");
       return;
     }
+    if (visitMode === "virtual" && !paymentProof) {
+      setError("Please upload your payment proof before confirming.");
+      return;
+    }
     const { firstName, lastName } = splitFullName(fullName);
     if (!firstName) {
       setError("Please enter your full name.");
@@ -255,15 +282,26 @@ export function BookingWorkspace({
           address: address || null,
         }),
       });
-      await api("/api/appointments", {
+      const cents = Math.round((Number(amountPhp || "0") || 0) * 100);
+      const fd = new FormData();
+      fd.set("dentistId", dentistId);
+      fd.set("startAt", selectedSlot.startAt);
+      fd.set("endAt", selectedSlot.endAt);
+      fd.set("notes", notes);
+      fd.set("amountCents", String(cents));
+      if (paymentProof) fd.set("proof", paymentProof);
+
+      const token = getToken();
+      const res = await fetch(`${getApiBase()}/api/payments/appointments`, {
         method: "POST",
-        body: JSON.stringify({
-          dentistId,
-          startAt: selectedSlot.startAt,
-          endAt: selectedSlot.endAt,
-          notes,
-        }),
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: fd,
       });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = typeof payload.error === "string" ? payload.error : `Request failed (${res.status})`;
+        throw new Error(msg);
+      }
       await loadAppointments();
       const when = new Date(selectedSlot.startAt).toLocaleString(undefined, {
         dateStyle: "medium",
@@ -356,8 +394,6 @@ export function BookingWorkspace({
                     </MenuItem>
                     <MenuItem value="Female">Female</MenuItem>
                     <MenuItem value="Male">Male</MenuItem>
-                    <MenuItem value="Other">Other</MenuItem>
-                    <MenuItem value="Prefer not to say">Prefer not to say</MenuItem>
                   </Select>
                 </FormControl>
               </Box>
@@ -373,25 +409,17 @@ export function BookingWorkspace({
               </Box>
             </Box>
 
-            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
+            {onlyDentist ? (
               <Box>
                 <FieldLabel>Dentist</FieldLabel>
-                <FormControl fullWidth size="small">
-                  <Select
-                    value={dentistId}
-                    onChange={(e) => setDentistId(e.target.value)}
-                    sx={{ borderRadius: 2 }}
-                  >
-                    {dentists.map((d) => (
-                      <MenuItem key={d.id} value={d.id}>
-                        {d.user.email}
-                        {d.specialty ? ` — ${d.specialty}` : ""}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <TextField
+                  fullWidth
+                  size="small"
+                  value={`${onlyDentist.user.email}${onlyDentist.specialty ? ` — ${onlyDentist.specialty}` : ""}`}
+                  disabled
+                />
               </Box>
-            </Box>
+            ) : null}
 
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
               <Box>
@@ -485,6 +513,76 @@ export function BookingWorkspace({
               </Typography>
             </Box>
 
+            {visitMode === "virtual" ? (
+              <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 2 }}>
+                <Typography sx={{ fontWeight: 800, mb: 1, color: "primary.main" }}>GCash payment</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  Scan the QR code using the GCash app, then upload your payment proof (screenshot/receipt). Payment is
+                  required for virtual visits.
+                </Typography>
+                {gcashError ? (
+                  <Alert severity="warning" sx={{ mb: 1.5 }}>
+                    {gcashError}
+                  </Alert>
+                ) : null}
+                {gcash ? (
+                  <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center" }}>
+                    <Box
+                      component="img"
+                      alt="GCash QR"
+                      src={`${getApiBase()}${gcash.qrUrl}`}
+                      sx={{
+                        width: 180,
+                        height: 180,
+                        bgcolor: "#fff",
+                        borderRadius: 2,
+                        border: "1px solid",
+                        borderColor: "divider",
+                        objectFit: "contain",
+                      }}
+                    />
+                    <Box sx={{ flex: "1 1 240px" }}>
+                      <Typography variant="body2" sx={{ mb: 1 }}>
+                        GCash number: <strong>{gcash.phoneNumber ?? "—"}</strong>
+                      </Typography>
+                      <TextField
+                        label="Amount (PHP)"
+                        value={amountPhp}
+                        onChange={(e) => setAmountPhp(e.target.value)}
+                        size="small"
+                        sx={{ mb: 1.5 }}
+                        inputProps={{ inputMode: "decimal" }}
+                      />
+                      <Button
+                        variant="outlined"
+                        component="label"
+                        size="small"
+                        sx={{ borderRadius: 2, textTransform: "none" }}
+                      >
+                        Upload payment proof
+                        <input
+                          type="file"
+                          hidden
+                          accept="image/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] ?? null;
+                            setPaymentProof(f);
+                          }}
+                        />
+                      </Button>
+                      <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                        {paymentProof?.name ?? "No file chosen"}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No QR code uploaded for this dentist yet.
+                  </Typography>
+                )}
+              </Box>
+            ) : null}
+
             <Box sx={{ bgcolor: "rgba(0, 150, 136, 0.06)", borderRadius: 2, p: 2 }}>
               <Typography sx={{ fontWeight: 700, color: "primary.main", mb: 1 }}>Mode of visit:</Typography>
               <RadioGroup
@@ -514,7 +612,7 @@ export function BookingWorkspace({
               variant="contained"
               color="primary"
               size="large"
-              disabled={busy}
+              disabled={busy || (visitMode === "virtual" && !paymentProof)}
               onClick={() => void handleConfirm()}
               sx={{ py: 1.5, fontWeight: 800, letterSpacing: "0.12em" }}
             >

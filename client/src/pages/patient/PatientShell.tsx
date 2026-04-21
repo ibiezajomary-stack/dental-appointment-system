@@ -20,11 +20,13 @@ import { PatientNotificationsPage } from "./PatientNotificationsPage";
 import { PatientServicesPage } from "./PatientServicesPage";
 import { ProfilePage } from "./ProfilePage";
 import { ToothChartPage } from "./ToothChartPage";
+import { VideoPage } from "./VideoPage";
 
 const NAV = [
   { label: "Home", to: "/patient" },
   { label: "Appointments", to: "/patient/appointments" },
   { label: "Virtual consultation", to: "/patient/consultations" },
+  { label: "Tooth chart", to: "/patient/chart" },
   { label: "Services", to: "/patient/services" },
   { label: "Notification", to: "/patient/notifications" },
 ] as const;
@@ -165,6 +167,7 @@ export function PatientShell() {
                 </ShellContent>
               }
             />
+            <Route path="consultations/:id/video" element={<VideoPage />} />
             <Route
               path="services"
               element={

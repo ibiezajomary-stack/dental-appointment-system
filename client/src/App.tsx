@@ -9,8 +9,7 @@ import {
 } from "@mui/material";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { AuthShell } from "./pages/auth/AuthShell";
-import { LoginFormPage } from "./pages/auth/LoginFormPage";
-import { LoginSelectionPage } from "./pages/auth/LoginSelectionPage";
+import { UnifiedLoginPage } from "./pages/auth/UnifiedLoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { PatientShell } from "./modules/patient";
 import { DentistShell } from "./modules/dentist";
@@ -56,11 +55,9 @@ function AppRoutes() {
   return (
     <Routes>
       <Route element={<AuthShell />}>
-        <Route path="/login" element={<Outlet />}>
-          <Route index element={<LoginSelectionPage />} />
-          <Route path="patient" element={<LoginFormPage />} />
-          <Route path="admin" element={<LoginFormPage />} />
-        </Route>
+        <Route path="/login" element={<UnifiedLoginPage />} />
+        <Route path="/login/patient" element={<Navigate to="/login" replace />} />
+        <Route path="/login/admin" element={<Navigate to="/login" replace />} />
         <Route path="/register" element={<RegisterPage />} />
       </Route>
 

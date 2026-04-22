@@ -79,14 +79,12 @@ function buildAppointmentNotes(params: {
   visitMode: "in-person" | "virtual";
   gender: string;
   comments: string;
-  photoName: string | null;
 }): string {
   const lines = [
     `Requested services: ${params.services.join(", ") || "Not specified"}`,
     `Visit: ${params.visitMode === "virtual" ? "Virtual" : "In-person"}`,
     `Gender: ${params.gender || "Not specified"}`,
   ];
-  if (params.photoName) lines.push(`Photo filename (reference): ${params.photoName}`);
   if (params.comments.trim()) lines.push(`Patient comments: ${params.comments.trim()}`);
   return lines.join("\n");
 }
@@ -103,6 +101,17 @@ function primaryServiceLabel(notes: string | null | undefined): string {
 
 function isVirtualFromNotes(notes: string | null | undefined): boolean {
   return /Visit:\s*Virtual/i.test(notes ?? "");
+}
+
+function withinBookingHours(startAtIso: string): boolean {
+  const d = new Date(startAtIso);
+  const hour = d.getHours();
+  const min = d.getMinutes();
+  // Allow 9:00 AM up to 4:00 PM inclusive.
+  if (hour < 9) return false;
+  if (hour > 16) return false;
+  if (hour === 16 && min > 0) return false;
+  return true;
 }
 
 function FieldLabel({ children }: { children: string }) {
@@ -131,7 +140,6 @@ export function BookingWorkspace({
   const navigate = useNavigate();
   const location = useLocation();
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [dentists, setDentists] = useState<Dentist[]>([]);
   const [dentistId, setDentistId] = useState("");
   const [date, setDate] = useState<Dayjs | null>(dayjs());
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -145,7 +153,7 @@ export function BookingWorkspace({
   const [services, setServices] = useState<Record<string, boolean>>({});
   const [visitMode, setVisitMode] = useState<"in-person" | "virtual">("in-person");
   const [comments, setComments] = useState("");
-  const [photoName, setPhotoName] = useState<string | null>(null);
+  const [teethPhoto, setTeethPhoto] = useState<File | null>(null);
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [gcash, setGcash] = useState<DentistGcash | null>(null);
   const [gcashError, setGcashError] = useState<string | null>(null);
@@ -157,13 +165,13 @@ export function BookingWorkspace({
   useEffect(() => {
     void api<Dentist[]>("/api/dentists")
       .then((d) => {
-        setDentists(d);
         if (d[0]) setDentistId(d[0].id);
+        else setError("No dentist is configured yet.");
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load dentists"));
   }, []);
 
-  const onlyDentist = useMemo(() => dentists[0] ?? null, [dentists]);
+  // Single dentist system: dentistId is auto-selected from the first dentist record.
 
   useEffect(() => {
     void api<PatientMe>("/api/patients/me")
@@ -215,7 +223,7 @@ export function BookingWorkspace({
       const s = await api<Slot[]>(
         `/api/dentists/${encodeURIComponent(dentistId)}/slots?date=${encodeURIComponent(dateStr)}`,
       );
-      setSlots(s);
+      setSlots(s.filter((x) => withinBookingHours(x.startAt)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load slots");
     }
@@ -267,7 +275,6 @@ export function BookingWorkspace({
       visitMode,
       gender,
       comments,
-      photoName,
     });
 
     setBusy(true);
@@ -290,6 +297,7 @@ export function BookingWorkspace({
       fd.set("notes", notes);
       fd.set("amountCents", String(cents));
       if (paymentProof) fd.set("proof", paymentProof);
+      if (teethPhoto) fd.set("teethPhoto", teethPhoto);
 
       const token = getToken();
       const res = await fetch(`${getApiBase()}/api/payments/appointments`, {
@@ -409,17 +417,7 @@ export function BookingWorkspace({
               </Box>
             </Box>
 
-            {onlyDentist ? (
-              <Box>
-                <FieldLabel>Dentist</FieldLabel>
-                <TextField
-                  fullWidth
-                  size="small"
-                  value={`${onlyDentist.user.email}${onlyDentist.specialty ? ` — ${onlyDentist.specialty}` : ""}`}
-                  disabled
-                />
-              </Box>
-            ) : null}
+            {/* Dentist is auto-selected (single dentist system), so no dentist input is shown. */}
 
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
               <Box>
@@ -492,7 +490,7 @@ export function BookingWorkspace({
             </Box>
 
             <Box>
-              <FieldLabel>Upload photo</FieldLabel>
+              <FieldLabel>Photo of teeth (optional)</FieldLabel>
               <Button variant="outlined" component="label" size="small" sx={{ borderRadius: 2, textTransform: "none" }}>
                 Choose file
                 <input
@@ -501,15 +499,15 @@ export function BookingWorkspace({
                   accept="image/*"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    setPhotoName(f ? f.name : null);
+                    setTeethPhoto(f ?? null);
                   }}
                 />
               </Button>
               <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                {photoName ?? "No file chosen"}
+                {teethPhoto ? teethPhoto.name : "No file chosen"}
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                Filename is stored with your request; file upload to clinic systems may be added later.
+                This photo will be saved to your record for the dentist to view.
               </Typography>
             </Box>
 
@@ -622,55 +620,57 @@ export function BookingWorkspace({
         </Paper>
 
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2.5,
-              borderRadius: 3,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2 }}>
-              Appointment
-            </Typography>
-            {nextAppointment ? (
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  bgcolor: "rgba(0, 150, 136, 0.12)",
-                  border: "1px solid",
-                  borderColor: "rgba(0, 150, 136, 0.35)",
-                }}
-              >
-                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: "primary.dark" }}>
-                  {primaryServiceLabel(nextAppointment.notes)}
-                </Typography>
-                <Typography variant="caption" sx={{ fontWeight: 700, letterSpacing: "0.06em" }}>
-                  {isVirtualFromNotes(nextAppointment.notes) ? "VIRTUAL" : "IN-PERSON"}
-                </Typography>
-                <Typography variant="body2" sx={{ mt: 1 }}>
-                  {new Date(nextAppointment.startAt).toLocaleDateString(undefined, {
-                    month: "long",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </Typography>
-                <Typography variant="body2">
-                  {new Date(nextAppointment.startAt).toLocaleTimeString(undefined, {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-                </Typography>
-              </Paper>
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                No upcoming appointment yet. Book using the form.
+          {showAppointmentHistory && (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                borderRadius: 3,
+                border: "1px solid",
+                borderColor: "divider",
+              }}
+            >
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2 }}>
+                Appointment
               </Typography>
-            )}
-          </Paper>
+              {nextAppointment ? (
+                <Paper
+                  elevation={0}
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    bgcolor: "rgba(0, 150, 136, 0.12)",
+                    border: "1px solid",
+                    borderColor: "rgba(0, 150, 136, 0.35)",
+                  }}
+                >
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800, color: "primary.dark" }}>
+                    {primaryServiceLabel(nextAppointment.notes)}
+                  </Typography>
+                  <Typography variant="caption" sx={{ fontWeight: 700, letterSpacing: "0.06em" }}>
+                    {isVirtualFromNotes(nextAppointment.notes) ? "VIRTUAL" : "IN-PERSON"}
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 1 }}>
+                    {new Date(nextAppointment.startAt).toLocaleDateString(undefined, {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </Typography>
+                  <Typography variant="body2">
+                    {new Date(nextAppointment.startAt).toLocaleTimeString(undefined, {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </Typography>
+                </Paper>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No upcoming appointment yet. Book using the form.
+                </Typography>
+              )}
+            </Paper>
+          )}
 
           <Paper
             elevation={0}

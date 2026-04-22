@@ -4,6 +4,7 @@ import { Prisma, Role, ToothSurfaceStateKind } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
+import { Buffer } from "node:buffer";
 
 export const patientsRouter = Router();
 
@@ -107,6 +108,15 @@ patientsRouter.get(
             orderBy: { startAt: "desc" },
             include: {
               dentist: { include: { user: { select: { email: true } } } },
+              files: {
+                orderBy: { createdAt: "desc" },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  originalName: true,
+                  mimeType: true,
+                },
+              },
             },
           },
           consultations: {
@@ -227,6 +237,15 @@ patientsRouter.patch(
             orderBy: { startAt: "desc" },
             include: {
               dentist: { include: { user: { select: { email: true } } } },
+              files: {
+                orderBy: { createdAt: "desc" },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  originalName: true,
+                  mimeType: true,
+                },
+              },
             },
           },
           consultations: {
@@ -249,6 +268,35 @@ patientsRouter.patch(
         age = Math.floor((Date.now() - d.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       }
       res.json({ ...fresh!, age });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+patientsRouter.get(
+  "/:id/id-document/:side",
+  requireAuth,
+  requireRole(Role.DENTIST, Role.ADMIN),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const id = patientIdParam(req);
+      const side = z.enum(["front", "back"]).parse(req.params.side);
+      const doc = await prisma.patientIdDocument.findUnique({ where: { patientId: id } });
+      if (!doc) {
+        res.status(404).json({ error: "No ID document uploaded" });
+        return;
+      }
+      const blob = side === "front" ? doc.frontBlob : doc.backBlob;
+      const mime = side === "front" ? doc.frontMimeType : doc.backMimeType;
+      const name = side === "front" ? doc.frontOriginalName : doc.backOriginalName;
+      if (!blob || !mime || !name) {
+        res.status(404).json({ error: `No ID ${side} uploaded` });
+        return;
+      }
+      res.setHeader("Content-Type", mime);
+      res.setHeader("Content-Disposition", `inline; filename="${name}"`);
+      res.send(Buffer.from(blob));
     } catch (e) {
       next(e);
     }

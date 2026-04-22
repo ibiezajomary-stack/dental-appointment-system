@@ -205,8 +205,11 @@ export function DentistConsultationsPage() {
 
   async function startCall(id: string) {
     try {
-      await api(`/api/consultations/${encodeURIComponent(id)}/start-call`, { method: "POST" });
+      const updated = await api<{ id: string }>(`/api/consultations/${encodeURIComponent(id)}/start-call`, {
+        method: "POST",
+      });
       await load();
+      navigate(`/dentist/consultations/${updated.id}/video`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start call");
     }
@@ -214,8 +217,12 @@ export function DentistConsultationsPage() {
 
   async function startCallForAppointment(appointmentId: string) {
     try {
-      await api(`/api/consultations/by-appointment/${encodeURIComponent(appointmentId)}/start-call`, { method: "POST" });
+      const updated = await api<{ id: string }>(
+        `/api/consultations/by-appointment/${encodeURIComponent(appointmentId)}/start-call`,
+        { method: "POST" },
+      );
       await load();
+      navigate(`/dentist/consultations/${updated.id}/video`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start call");
     }

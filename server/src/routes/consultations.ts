@@ -186,6 +186,7 @@ consultationsRouter.post(
         res.status(403).json({ error: "Forbidden" });
         return;
       }
+      const wasInProgress = existing.status === ConsultationStatus.IN_PROGRESS;
       const updated = await prisma.consultation.update({
         where: { id },
         data: {
@@ -194,6 +195,18 @@ consultationsRouter.post(
           videoRoomId: existing.videoRoomId ?? `dental-${randomUUID().slice(0, 8)}`,
         },
       });
+
+      if (!wasInProgress) {
+        await prisma.notification.create({
+          data: {
+            patientId: existing.patientId,
+            appointmentId: existing.appointmentId ?? null,
+            title: "Virtual consultation started",
+            message: "The dentist has started your virtual consultation. You can join the call now.",
+          },
+        });
+      }
+
       res.json(updated);
     } catch (e) {
       next(e);
@@ -241,6 +254,7 @@ consultationsRouter.post(
           },
         }));
 
+      const wasInProgress = c.status === ConsultationStatus.IN_PROGRESS;
       const updated = await prisma.consultation.update({
         where: { id: c.id },
         data: {
@@ -249,6 +263,18 @@ consultationsRouter.post(
           videoRoomId: c.videoRoomId ?? `dental-${randomUUID().slice(0, 8)}`,
         },
       });
+
+      if (!wasInProgress) {
+        await prisma.notification.create({
+          data: {
+            patientId: appt.patientId,
+            appointmentId,
+            title: "Virtual consultation started",
+            message: "The dentist has started your virtual consultation. You can join the call now.",
+          },
+        });
+      }
+
       res.json(updated);
     } catch (e) {
       next(e);

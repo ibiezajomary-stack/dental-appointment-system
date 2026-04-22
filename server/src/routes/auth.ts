@@ -57,6 +57,7 @@ const registerPatientSchema = z.object({
   password: z.string().min(8),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
+  dateOfBirth: z.coerce.date(),
 });
 
 authRouter.post(
@@ -88,6 +89,7 @@ authRouter.post(
             create: {
               firstName: parsed.firstName,
               lastName: parsed.lastName,
+              dateOfBirth: parsed.dateOfBirth,
               idDocument: {
                 create: {
                   ...(front && {
@@ -110,6 +112,19 @@ authRouter.post(
           dentist: true,
         },
       });
+
+      // Notify dentist (single-dentist system) to review the new patient profile + uploaded ID.
+      const dentist = await prisma.dentist.findFirst();
+      if (dentist && user.patient) {
+        await prisma.dentistNotification.create({
+          data: {
+            dentistId: dentist.id,
+            patientId: user.patient.id,
+            title: "New patient account created",
+            message: `A new patient account was created: ${user.patient.firstName} ${user.patient.lastName}. Review profile and uploaded ID.`,
+          },
+        });
+      }
 
       const token = signToken({ sub: user.id, role: user.role });
       res.status(201).json({

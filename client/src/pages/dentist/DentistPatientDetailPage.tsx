@@ -11,7 +11,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { api } from "../../lib/api";
+import { api, getApiBase, getToken } from "../../lib/api";
 import { DentistOdontogramPanel } from "../../modules/dentist";
 
 const MH_KEYS = [
@@ -63,6 +63,7 @@ type Dossier = {
     endAt: string;
     status: string;
     notes?: string | null;
+    files?: { id: string; createdAt: string; originalName: string; mimeType: string }[];
   }[];
   consultations: {
     id: string;
@@ -99,6 +100,32 @@ export function DentistPatientDetailPage() {
   const [gingSpongy, setGingSpongy] = useState(false);
   const [gingRetracted, setGingRetracted] = useState(false);
   const [gingBleeding, setGingBleeding] = useState(false);
+
+  async function openFile(fileId: string) {
+    const token = getToken();
+    const res = await fetch(`${getApiBase()}/api/files/${encodeURIComponent(fileId)}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!res.ok) throw new Error(`Download failed (${res.status})`);
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    window.open(objUrl, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+  }
+
+  async function openPatientId(side: "front" | "back") {
+    if (!id) return;
+    const token = getToken();
+    const res = await fetch(
+      `${getApiBase()}/api/patients/${encodeURIComponent(id)}/id-document/${encodeURIComponent(side)}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+    );
+    if (!res.ok) throw new Error(`Download failed (${res.status})`);
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    window.open(objUrl, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+  }
 
 
   const load = useCallback(async () => {
@@ -324,6 +351,23 @@ export function DentistPatientDetailPage() {
 
       <Paper sx={{ p: 2, mb: 2 }}>
         <Typography variant="h6" gutterBottom>
+          Uploaded ID
+        </Typography>
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+          <Button variant="outlined" onClick={() => void openPatientId("front")} sx={{ textTransform: "none" }}>
+            View ID (front)
+          </Button>
+          <Button variant="outlined" onClick={() => void openPatientId("back")} sx={{ textTransform: "none" }}>
+            View ID (back)
+          </Button>
+        </Box>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+          These are the ID images/PDF uploaded during account creation.
+        </Typography>
+      </Paper>
+
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Typography variant="h6" gutterBottom>
           Appointments
         </Typography>
         {dossier.appointments.length === 0 ? (
@@ -345,6 +389,21 @@ export function DentistPatientDetailPage() {
                 <Typography variant="caption" color="text.secondary">
                   {a.notes}
                 </Typography>
+              )}
+              {a.files && a.files.length > 0 && (
+                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
+                  {a.files.map((f) => (
+                    <Button
+                      key={f.id}
+                      size="small"
+                      variant="outlined"
+                      onClick={() => void openFile(f.id)}
+                      sx={{ textTransform: "none" }}
+                    >
+                      View teeth photo
+                    </Button>
+                  ))}
+                </Box>
               )}
             </Box>
           ))

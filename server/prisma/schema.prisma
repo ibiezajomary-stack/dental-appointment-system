@@ -109,6 +109,23 @@ model Patient {
   toothSurfaceStates ToothSurfaceState[]
   appointmentPayments AppointmentPayment[]
   idDocument       PatientIdDocument?
+  notifications    Notification[]
+  dentistNotifications DentistNotification[]
+}
+
+model Notification {
+  id            String   @id @default(cuid())
+  patientId     String
+  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  title         String
+  message       String   @db.Text
+  readAt        DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([patientId, createdAt])
+  @@index([appointmentId])
 }
 
 model PatientIdDocument {
@@ -166,10 +183,41 @@ model Dentist {
   phone         String?
   bio           String?              @db.Text
   unavailableBlocks DentistUnavailableBlock[]
+  dateBlocks       DentistDateBlock[]
   paymentMethods    DentistPaymentMethod[]
   appointments      Appointment[]
   consultations     Consultation[]
   appointmentPayments AppointmentPayment[]
+  notifications     DentistNotification[]
+}
+
+/// One-time dentist blocks for a specific date/time range (local time as entered; stored as timestamp).
+model DentistDateBlock {
+  id        String   @id @default(cuid())
+  dentistId String
+  dentist   Dentist  @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  startAt   DateTime
+  endAt     DateTime
+  reason    String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([dentistId, startAt])
+  @@index([dentistId, endAt])
+}
+
+model DentistNotification {
+  id         String   @id @default(cuid())
+  dentistId  String
+  dentist    Dentist  @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  patientId  String?
+  patient    Patient? @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  title      String
+  message    String   @db.Text
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([dentistId, createdAt])
+  @@index([patientId])
 }
 
 model DentistPaymentMethod {
@@ -218,6 +266,8 @@ model Appointment {
   payment     AppointmentPayment?
   consultations Consultation[]
   billingRecords BillingRecord[]
+  notifications Notification[]
+  files        StoredFile[]
 
   @@index([dentistId, startAt])
 }
@@ -295,6 +345,8 @@ model StoredFile {
   id             String        @id @default(cuid())
   patientId      String
   patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId  String?
+  appointment    Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   consultationId String?
   consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
   /// Legacy path for old uploads; new uploads use `blob`.
@@ -306,6 +358,8 @@ model StoredFile {
   uploadedById   String
   uploadedBy     User          @relation("FileUploader", fields: [uploadedById], references: [id])
   createdAt      DateTime      @default(now())
+
+  @@index([appointmentId])
 }
 
 model BillingRecord {

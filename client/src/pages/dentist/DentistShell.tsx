@@ -1,16 +1,26 @@
 import { Link as RouterLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AppBar,
+  Badge,
   Box,
   Button,
   Container,
   CssBaseline,
+  Divider,
+  Drawer,
+  IconButton,
+  List,
+  ListItemButton,
+  ListItemText,
   ThemeProvider,
   Toolbar,
   Typography,
 } from "@mui/material";
+import MenuIcon from "@mui/icons-material/Menu";
 import { useAuth } from "../../auth/AuthContext";
 import { dentistTheme } from "../../theme/dentistTheme";
+import { api } from "../../lib/api";
 import { DentistHome } from "./DentistHome";
 import { DentistAppointmentsPage } from "./DentistAppointmentsPage";
 import { DentistConsultationsPage } from "./DentistConsultationsPage";
@@ -36,7 +46,7 @@ const NAV = [
   { label: "Notification", to: "/dentist/notifications" },
 ] as const;
 
-function DentistNavLink({ to, label }: { to: string; label: string }) {
+function DentistNavLink({ to, label }: { to: string; label: ReactNode }) {
   const { pathname } = useLocation();
   const isHome = to === "/dentist";
   const active = isHome
@@ -67,7 +77,45 @@ function DentistNavLink({ to, label }: { to: string; label: string }) {
 
 export function DentistShell() {
   const { user, logout } = useAuth();
+  const location = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
   if (user?.role !== "DENTIST") return <Navigate to="/" replace />;
+
+  const navWithBadges = useMemo(() => {
+    return NAV.map((item) => ({
+      ...item,
+      labelNode:
+        item.to === "/dentist/notifications" ? (
+          <Badge color="error" badgeContent={unread} invisible={unread === 0}>
+            <span>{item.label}</span>
+          </Badge>
+        ) : (
+          item.label
+        ),
+    }));
+  }, [unread]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+
+    async function tick() {
+      try {
+        const res = await api<{ unread: number }>("/api/dentist-notifications/me/unread-count");
+        if (!cancelled) setUnread(res.unread);
+      } catch {
+        // ignore polling errors
+      }
+      if (!cancelled) timer = window.setTimeout(tick, 10_000);
+    }
+
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
 
   return (
     <ThemeProvider theme={dentistTheme}>
@@ -91,6 +139,13 @@ export function DentistShell() {
               px: { xs: 2, sm: 3 },
             }}
           >
+            <IconButton
+              onClick={() => setMobileOpen(true)}
+              sx={{ display: { xs: "inline-flex", md: "none" }, mr: 0.5 }}
+              aria-label="Open navigation menu"
+            >
+              <MenuIcon />
+            </IconButton>
             <Typography
               component={RouterLink}
               to="/dentist"
@@ -99,27 +154,72 @@ export function DentistShell() {
                 fontWeight: 800,
                 color: "primary.main",
                 textDecoration: "none",
-                mr: 2,
+                mr: { xs: 0, md: 2 },
                 letterSpacing: "-0.02em",
               }}
             >
               iSmile
             </Typography>
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, flexGrow: 1, alignItems: "center" }}>
-              {NAV.map((item) => (
-                <DentistNavLink key={item.to} to={item.to} label={item.label} />
+            <Box
+              sx={{
+                display: { xs: "none", md: "flex" },
+                flexWrap: "wrap",
+                gap: 0.5,
+                flexGrow: 1,
+                alignItems: "center",
+              }}
+            >
+              {navWithBadges.map((item) => (
+                <DentistNavLink key={item.to} to={item.to} label={item.labelNode} />
               ))}
             </Box>
+            <Box sx={{ flexGrow: { xs: 1, md: 0 } }} />
             <Button
               variant="contained"
               color="primary"
               onClick={() => logout()}
-              sx={{ px: 3, fontWeight: 700 }}
+              sx={{ px: 3, fontWeight: 700, display: { xs: "none", md: "inline-flex" } }}
             >
               Logout
             </Button>
           </Toolbar>
         </AppBar>
+
+        <Drawer
+          anchor="left"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          PaperProps={{ sx: { width: 280 } }}
+        >
+          <Box sx={{ p: 2 }}>
+            <Typography variant="h6" fontWeight={900} color="primary.main">
+              iSmile
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Dentist menu
+            </Typography>
+          </Box>
+          <Divider />
+          <List disablePadding>
+            {navWithBadges.map((item) => (
+              <ListItemButton
+                key={item.to}
+                component={RouterLink}
+                to={item.to}
+                onClick={() => setMobileOpen(false)}
+                selected={location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)}
+              >
+                <ListItemText primary={item.labelNode} />
+              </ListItemButton>
+            ))}
+          </List>
+          <Divider sx={{ mt: "auto" }} />
+          <Box sx={{ p: 2 }}>
+            <Button variant="contained" fullWidth onClick={() => logout()}>
+              Logout
+            </Button>
+          </Box>
+        </Drawer>
         <Container maxWidth={false} sx={{ py: 3, px: { xs: 2, sm: 3 }, width: "100%" }}>
           <Routes>
             <Route index element={<DentistHome />} />

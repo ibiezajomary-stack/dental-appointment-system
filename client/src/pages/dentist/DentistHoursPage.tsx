@@ -3,6 +3,7 @@ import ChevronLeft from "@mui/icons-material/ChevronLeft";
 import ChevronRight from "@mui/icons-material/ChevronRight";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
@@ -26,12 +27,13 @@ import {
   Select,
   type SelectChangeEvent,
   Stack,
+  Tab,
+  Tabs,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
-  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -44,6 +46,8 @@ const DEFAULT_SCHEDULE_END_MINUTES = 22 * 60;
 type Block = { dayOfWeek: number; startMinutes: number; endMinutes: number };
 
 type BlockRow = Block & { id?: string };
+
+type DateBlock = { id: string; startAt: string; endAt: string; reason: string | null; createdAt: string };
 
 const WEEKDAY_OPTIONS: { value: number; label: string }[] = [
   { value: 0, label: "Sunday" },
@@ -113,14 +117,20 @@ function formatMinutesAsTime(mins: number): string {
 export function DentistHoursPage() {
   const [rows, setRows] = useState<BlockRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [success, setSuccess] = useState<string | null>(null);
+  const [dateBlocks, setDateBlocks] = useState<DateBlock[]>([]);
   const [viewMonth, setViewMonth] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
   const [blockOpen, setBlockOpen] = useState(false);
+  const [blockTab, setBlockTab] = useState<"weekly" | "date">("weekly");
   const [draftRows, setDraftRows] = useState<BlockRow[]>([]);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null);
+  const [dateBlockDate, setDateBlockDate] = useState<Dayjs | null>(dayjs());
+  const [dateBlockStart, setDateBlockStart] = useState<Dayjs | null>(dayjs().hour(9).minute(0).second(0));
+  const [dateBlockEnd, setDateBlockEnd] = useState<Dayjs | null>(dayjs().hour(10).minute(0).second(0));
+  const [dateBlockReason, setDateBlockReason] = useState("");
 
   async function load() {
     try {
@@ -131,14 +141,29 @@ export function DentistHoursPage() {
     }
   }
 
+  async function loadDateBlocks() {
+    try {
+      const data = await api<DateBlock[]>("/api/dentists/me/date-blocks");
+      setDateBlocks(data);
+    } catch {
+      /* ignore */
+    }
+  }
+
   useEffect(() => {
     void load();
+    void loadDateBlocks();
   }, []);
 
   const hasUnavailableOnWeekday = useMemo(() => {
     const s = new Set(rows.map((r) => r.dayOfWeek));
     return (dow: number) => s.has(dow);
   }, [rows]);
+
+  const hasDateBlockOnDate = useMemo(() => {
+    const set = new Set(dateBlocks.map((b) => new Date(b.startAt).toDateString()));
+    return (d: Date) => set.has(d.toDateString());
+  }, [dateBlocks]);
 
   const blocksForSelectedWeekday = useMemo(() => {
     if (!selectedCalendarDate) return [];
@@ -181,6 +206,7 @@ export function DentistHoursPage() {
       return;
     }
     setError(null);
+    setSuccess(null);
     try {
       await api("/api/dentists/me/unavailable-blocks", {
         method: "PUT",
@@ -193,9 +219,53 @@ export function DentistHoursPage() {
         }),
       });
       await load();
+      await loadDateBlocks();
       setBlockOpen(false);
+      setSuccess("Unavailable times saved.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  async function createDateBlock() {
+    if (!dateBlockDate || !dateBlockStart || !dateBlockEnd) {
+      setError("Choose a date and start/end time.");
+      return;
+    }
+    const start = dateBlockDate.hour(dateBlockStart.hour()).minute(dateBlockStart.minute()).second(0).millisecond(0);
+    const end = dateBlockDate.hour(dateBlockEnd.hour()).minute(dateBlockEnd.minute()).second(0).millisecond(0);
+    if (!start.isBefore(end)) {
+      setError("End time must be after start time.");
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    try {
+      await api("/api/dentists/me/date-blocks", {
+        method: "POST",
+        body: JSON.stringify({
+          startAt: start.toDate().toISOString(),
+          endAt: end.toDate().toISOString(),
+          reason: dateBlockReason.trim() || undefined,
+        }),
+      });
+      setDateBlockReason("");
+      await loadDateBlocks();
+      setSuccess("Date block created.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create date block");
+    }
+  }
+
+  async function removeDateBlock(id: string) {
+    setError(null);
+    setSuccess(null);
+    try {
+      await api(`/api/dentists/me/date-blocks/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await loadDateBlocks();
+      setSuccess("Date block removed.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete date block");
     }
   }
 
@@ -219,17 +289,6 @@ export function DentistHoursPage() {
           p: { xs: 2, sm: 3 },
         }}
       >
-        <TextField
-          placeholder="Search by name, address, or contact…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          fullWidth
-          sx={{
-            mb: 3,
-            "& .MuiOutlinedInput-root": { borderRadius: 2, bgcolor: "background.paper" },
-          }}
-        />
-
         <Paper
           elevation={0}
           sx={{
@@ -288,6 +347,11 @@ export function DentistHoursPage() {
               you list times when appointments are <strong>not</strong> offered.
             </Typography>
 
+            {success && (
+              <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
+                {success}
+              </Alert>
+            )}
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
                 {error}
@@ -324,6 +388,7 @@ export function DentistHoursPage() {
                 const cellDate = new Date(y, m, day);
                 const dow = cellDate.getDay();
                 const hasBlock = hasUnavailableOnWeekday(dow);
+                const hasOneTime = hasDateBlockOnDate(cellDate);
                 const isToday = isSameDay(cellDate, today);
                 const label = cellDate.toLocaleDateString(undefined, {
                   weekday: "long",
@@ -345,7 +410,7 @@ export function DentistHoursPage() {
                       justifyContent: "center",
                       borderRadius: 1.5,
                       border: "1px solid",
-                      borderColor: hasBlock ? "warning.light" : "divider",
+                      borderColor: hasBlock || hasOneTime ? "warning.light" : "divider",
                       bgcolor: isToday ? "rgba(0, 150, 136, 0.08)" : "background.paper",
                       color: "text.primary",
                       fontWeight: isToday ? 700 : 500,
@@ -426,10 +491,21 @@ export function DentistHoursPage() {
           <DialogContent>
             <Stack spacing={2} sx={{ pt: 0.5 }}>
               <Typography variant="body2" color="text.secondary">
-                Add one row per break or closure. Times repeat every week. Booking stays available everywhere in{" "}
-                <strong>{formatScheduleWindow()}</strong> except during these blocks (and other conflicts).
+                Choose whether this block should repeat weekly, or apply only to a specific date.
               </Typography>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap" useFlexGap>
+
+              <Tabs
+                value={blockTab}
+                onChange={(_e, v) => setBlockTab(v)}
+                sx={{ borderBottom: "1px solid", borderColor: "divider" }}
+              >
+                <Tab value="weekly" label="Repeat weekly" sx={{ textTransform: "none", fontWeight: 800 }} />
+                <Tab value="date" label="Specific date" sx={{ textTransform: "none", fontWeight: 800 }} />
+              </Tabs>
+
+              {blockTab === "weekly" ? (
+                <>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap" useFlexGap>
                 <Button size="small" variant="outlined" color="secondary" onClick={() => setDraftRows(lunchWeekdaysTemplate())}>
                   Mon–Fri lunch (12–1)
                 </Button>
@@ -524,13 +600,97 @@ export function DentistHoursPage() {
                   Add time block
                 </Button>
               </Box>
+                </>
+              ) : (
+                <Stack spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Block a one-time date/time range. This does not repeat weekly.
+                  </Typography>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                    <DatePicker
+                      label="Date"
+                      value={dateBlockDate}
+                      onChange={(v) => setDateBlockDate(v)}
+                      slotProps={pickerSlotProps}
+                    />
+                    <TimePicker
+                      label="Start"
+                      value={dateBlockStart}
+                      onChange={(v) => setDateBlockStart(v)}
+                      slotProps={pickerSlotProps}
+                    />
+                    <TimePicker
+                      label="End"
+                      value={dateBlockEnd}
+                      onChange={(v) => setDateBlockEnd(v)}
+                      slotProps={pickerSlotProps}
+                    />
+                  </Stack>
+
+                  <FormControl size="small">
+                    <InputLabel id="date-block-reason">Reason (optional)</InputLabel>
+                    <Select
+                      labelId="date-block-reason"
+                      label="Reason (optional)"
+                      value={dateBlockReason}
+                      onChange={(e) => setDateBlockReason(e.target.value)}
+                      sx={{ minWidth: 260 }}
+                    >
+                      <MenuItem value="">
+                        <em>No reason</em>
+                      </MenuItem>
+                      <MenuItem value="Holiday">Holiday</MenuItem>
+                      <MenuItem value="Sick leave">Sick leave</MenuItem>
+                      <MenuItem value="Conference">Conference</MenuItem>
+                      <MenuItem value="Maintenance">Maintenance</MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  <Button variant="contained" onClick={() => void createDateBlock()} sx={{ alignSelf: "flex-start" }}>
+                    Add date block
+                  </Button>
+
+                  <Typography variant="subtitle2" fontWeight={800}>
+                    Existing date blocks
+                  </Typography>
+                  {dateBlocks.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      No date blocks yet.
+                    </Typography>
+                  ) : (
+                    <List dense disablePadding>
+                      {dateBlocks.slice(0, 30).map((b) => (
+                        <ListItem
+                          key={b.id}
+                          sx={{ px: 0 }}
+                          secondaryAction={
+                            <IconButton edge="end" aria-label="Delete date block" onClick={() => void removeDateBlock(b.id)}>
+                              <DeleteOutline fontSize="small" />
+                            </IconButton>
+                          }
+                        >
+                          <ListItemText
+                            primary={`${new Date(b.startAt).toLocaleString()} – ${new Date(b.endAt).toLocaleTimeString(undefined, {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}`}
+                            secondary={b.reason ?? "One-time block"}
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  )}
+                </Stack>
+              )}
             </Stack>
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 2, justifyContent: "space-between" }}>
             <Button onClick={closeDialog}>Cancel</Button>
-            <Button variant="contained" onClick={() => void saveDraft()}>
-              Save blocks
-            </Button>
+            {blockTab === "weekly" ? (
+              <Button variant="contained" onClick={() => void saveDraft()}>
+                Save weekly blocks
+              </Button>
+            ) : null}
           </DialogActions>
         </Dialog>
       </Box>

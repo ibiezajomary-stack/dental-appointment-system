@@ -43,13 +43,12 @@ paymentsRouter.post(
   "/appointments",
   requireAuth,
   requireRole(Role.PATIENT),
-  upload.single("proof"),
+  upload.fields([
+    { name: "proof", maxCount: 1 },
+    { name: "teethPhoto", maxCount: 1 },
+  ]),
   async (req: AuthedRequest, res, next) => {
     try {
-      if (!req.file) {
-        res.status(400).json({ error: "proof file required" });
-        return;
-      }
       const body = createPaymentSchema.parse(req.body);
       const patient = await prisma.patient.findUnique({ where: { userId: req.userId! } });
       if (!patient) {
@@ -65,6 +64,14 @@ paymentsRouter.post(
       const endAt = new Date(body.endAt);
       if (!(startAt < endAt)) {
         res.status(400).json({ error: "startAt must be before endAt" });
+        return;
+      }
+      const isVirtual = isVirtualFromNotes(body.notes);
+      const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const proof = files?.proof?.[0];
+      const teethPhoto = files?.teethPhoto?.[0];
+      if (isVirtual && !proof) {
+        res.status(400).json({ error: "proof file required" });
         return;
       }
 
@@ -94,7 +101,19 @@ paymentsRouter.post(
           },
         });
 
-        if (isVirtualFromNotes(body.notes)) {
+        await tx.dentistNotification.create({
+          data: {
+            dentistId: body.dentistId,
+            patientId: patient.id,
+            title: "New appointment booked",
+            message: `${patient.firstName} ${patient.lastName} booked an appointment for ${startAt.toLocaleString(undefined, {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })}.`,
+          },
+        });
+
+        if (isVirtual) {
           await tx.consultation.create({
             data: {
               patientId: patient.id,
@@ -106,29 +125,47 @@ paymentsRouter.post(
           });
         }
 
-        const payment = await tx.appointmentPayment.create({
-          data: {
-            appointmentId: appt.id,
-            patientId: patient.id,
-            dentistId: body.dentistId,
-            amountCents: body.amountCents,
-            status: PaymentVerificationStatus.PENDING,
-            proofBlob: toBytes(req.file!.buffer),
-            proofMimeType: req.file!.mimetype,
-            proofOriginalName: req.file!.originalname,
-          },
-        });
+        if (teethPhoto) {
+          await tx.storedFile.create({
+            data: {
+              patientId: patient.id,
+              appointmentId: appt.id,
+              blob: toBytes(teethPhoto.buffer),
+              mimeType: teethPhoto.mimetype,
+              originalName: teethPhoto.originalname,
+              sizeBytes: teethPhoto.buffer.length,
+              uploadedById: req.userId!,
+            },
+          });
+        }
+
+        const payment = proof
+          ? await tx.appointmentPayment.create({
+              data: {
+                appointmentId: appt.id,
+                patientId: patient.id,
+                dentistId: body.dentistId,
+                amountCents: body.amountCents,
+                status: PaymentVerificationStatus.PENDING,
+                proofBlob: toBytes(proof.buffer),
+                proofMimeType: proof.mimetype,
+                proofOriginalName: proof.originalname,
+              },
+            })
+          : null;
         return { appointment: appt, payment };
       });
 
       res.status(201).json({
         appointment: created.appointment,
-        payment: {
-          id: created.payment.id,
-          status: created.payment.status,
-          amountCents: created.payment.amountCents,
-          createdAt: created.payment.createdAt,
-        },
+        payment: created.payment
+          ? {
+              id: created.payment.id,
+              status: created.payment.status,
+              amountCents: created.payment.amountCents,
+              createdAt: created.payment.createdAt,
+            }
+          : null,
       });
     } catch (e) {
       if (e instanceof Error && e.message === "SLOT_TAKEN") {

@@ -50,7 +50,14 @@ dentistsRouter.get("/:id/slots", async (req, res, next) => {
         endAt: { gt: day },
       },
     });
-    const slots = generateSlotsForDay(day, dentist.unavailableBlocks, existing, clinicBlocks);
+    const dentistDateBlocks = await prisma.dentistDateBlock.findMany({
+      where: {
+        dentistId: id,
+        startAt: { lt: dayEnd },
+        endAt: { gt: day },
+      },
+    });
+    const slots = generateSlotsForDay(day, dentist.unavailableBlocks, existing, clinicBlocks, dentistDateBlocks);
     res.json(
       slots.map((s) => ({
         startAt: s.start.toISOString(),
@@ -61,6 +68,91 @@ dentistsRouter.get("/:id/slots", async (req, res, next) => {
     next(e);
   }
 });
+
+const dateBlockSchema = z
+  .object({
+    startAt: z.string().datetime(),
+    endAt: z.string().datetime(),
+    reason: z.string().optional(),
+  })
+  .refine((v) => new Date(v.startAt) < new Date(v.endAt), { message: "endAt must be after startAt" });
+
+dentistsRouter.get(
+  "/me/date-blocks",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      const list = await prisma.dentistDateBlock.findMany({
+        where: { dentistId: dentist.id },
+        orderBy: { startAt: "desc" },
+        take: 200,
+      });
+      res.json(list);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+dentistsRouter.post(
+  "/me/date-blocks",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      const body = dateBlockSchema.parse(req.body);
+      const startAt = new Date(body.startAt);
+      const endAt = new Date(body.endAt);
+      const created = await prisma.dentistDateBlock.create({
+        data: {
+          dentistId: dentist.id,
+          startAt,
+          endAt,
+          reason: body.reason?.trim() || null,
+        },
+      });
+      res.status(201).json(created);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+dentistsRouter.delete(
+  "/me/date-blocks/:id",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      const id = typeof req.params.id === "string" ? req.params.id : req.params.id[0];
+      const existing = await prisma.dentistDateBlock.findUnique({ where: { id } });
+      if (!existing || existing.dentistId !== dentist.id) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      await prisma.dentistDateBlock.delete({ where: { id } });
+      res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 const dentistProfilePatch = z.object({
   displayName: z.string().min(1).optional().nullable(),

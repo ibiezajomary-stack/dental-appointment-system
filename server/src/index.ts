@@ -17,12 +17,29 @@ import { billingRouter } from "./routes/billing.js";
 import { adminClinicRouter } from "./routes/adminClinic.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { publicPaymentMethodsRouter } from "./routes/publicPaymentMethods.js";
+import { notificationsRouter } from "./routes/notifications.js";
+import { dentistNotificationsRouter } from "./routes/dentistNotifications.js";
 
 const app = express();
 
+const allowedOrigins = (config.clientOrigin ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: config.clientOrigin,
+    origin: (origin, cb) => {
+      // Allow non-browser clients or same-origin requests with no Origin header.
+      if (!origin) return cb(null, true);
+
+      // In development, allow all origins so you can access from phone on same Wi‑Fi.
+      if (config.nodeEnv === "development") return cb(null, true);
+
+      // In non-dev, require explicit allow-list (comma-separated in CLIENT_ORIGIN).
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   }),
 );
@@ -43,6 +60,8 @@ app.use("/api/billing", billingRouter);
 app.use("/api/admin", adminClinicRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/public-payment-methods", publicPaymentMethodsRouter);
+app.use("/api/notifications", notificationsRouter);
+app.use("/api/dentist-notifications", dentistNotificationsRouter);
 
 app.use(errorHandler);
 

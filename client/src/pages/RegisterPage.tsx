@@ -4,7 +4,9 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Container,
+  FormControlLabel,
   FormControl,
   InputLabel,
   Link,
@@ -26,9 +28,10 @@ export function RegisterPage() {
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
   const [sex, setSex] = useState("");
-  const [age, setAge] = useState("");
+  const [birthday, setBirthday] = useState("");
   const [idFront, setIdFront] = useState<File | null>(null);
   const [idBack, setIdBack] = useState<File | null>(null);
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -42,9 +45,34 @@ export function RegisterPage() {
     setError(null);
     setBusy(true);
     try {
+      if (!agreed) {
+        setError("Please accept the Terms & Data Privacy consent to create an account.");
+        setBusy(false);
+        return;
+      }
+      if (!email.trim()) {
+        setError("Email is required.");
+        setBusy(false);
+        return;
+      }
+      if (!password || password.length < 8) {
+        setError("Password must be at least 8 characters.");
+        setBusy(false);
+        return;
+      }
       const fn = [firstName, middleName].filter(Boolean).join(" ").trim();
       if (!fn || !lastName.trim()) {
         setError("Please enter your first and last name.");
+        setBusy(false);
+        return;
+      }
+      if (!sex) {
+        setError("Please select your sex.");
+        setBusy(false);
+        return;
+      }
+      if (!birthday) {
+        setError("Birthday is required.");
         setBusy(false);
         return;
       }
@@ -53,6 +81,7 @@ export function RegisterPage() {
       fd.set("password", password);
       fd.set("firstName", fn);
       fd.set("lastName", lastName.trim());
+      fd.set("dateOfBirth", birthday);
       if (idFront) fd.set("idFront", idFront);
       if (idBack) fd.set("idBack", idBack);
 
@@ -113,6 +142,7 @@ export function RegisterPage() {
                 label="Sex"
                 value={sex}
                 onChange={(e) => setSex(e.target.value)}
+                required
               >
                 <MenuItem value="">
                   <em>Select</em>
@@ -122,13 +152,14 @@ export function RegisterPage() {
               </Select>
             </FormControl>
             <TextField
-              label="Age"
-              type="number"
+              label="Birthday"
+              type="date"
               fullWidth
               margin="normal"
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-              inputProps={{ min: 0, max: 120 }}
+              value={birthday}
+              onChange={(e) => setBirthday(e.target.value)}
+              required
+              InputLabelProps={{ shrink: true }}
             />
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2, mb: 0.5 }}>
@@ -208,7 +239,32 @@ export function RegisterPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          <Button type="submit" variant="contained" color="primary" fullWidth sx={{ mt: 2, py: 1.25 }} disabled={busy}>
+          <Box sx={{ mt: 1 }}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  required
+                  disabled={busy}
+                />
+              }
+              label={
+                <Typography variant="body2" color="text.secondary">
+                  I agree that I allow the system to collect and use my information for clinic services, in accordance
+                  with the Data Privacy Act.
+                </Typography>
+              }
+            />
+          </Box>
+          <Button
+            type="submit"
+            variant="contained"
+            color="primary"
+            fullWidth
+            sx={{ mt: 2, py: 1.25 }}
+            disabled={busy || !agreed}
+          >
             {busy ? "Creating…" : "Create account"}
           </Button>
         </Box>

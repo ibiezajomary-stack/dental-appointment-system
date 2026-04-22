@@ -14,6 +14,7 @@ type Gcash = {
 export function DentistGcashQrPage() {
   const [row, setRow] = useState<Gcash | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
 
@@ -36,6 +37,7 @@ export function DentistGcashQrPage() {
   async function upload(file: File) {
     setBusy(true);
     setError(null);
+    setSuccess(null);
     try {
       const fd = new FormData();
       fd.set("qr", file);
@@ -52,6 +54,7 @@ export function DentistGcashQrPage() {
         throw new Error(msg);
       }
       await load();
+      setSuccess("GCash QR updated.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -71,6 +74,11 @@ export function DentistGcashQrPage() {
       {error ? (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
+        </Alert>
+      ) : null}
+      {success ? (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
+          {success}
         </Alert>
       ) : null}
 

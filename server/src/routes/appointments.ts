@@ -50,7 +50,7 @@ appointmentsRouter.post("/", requireAuth, requireRole(Role.PATIENT), async (req:
       if (clash) {
         throw new Error("SLOT_TAKEN");
       }
-      return tx.appointment.create({
+      const appt = await tx.appointment.create({
         data: {
           patientId: patient.id,
           dentistId: body.dentistId,
@@ -64,6 +64,18 @@ appointmentsRouter.post("/", requireAuth, requireRole(Role.PATIENT), async (req:
           patient: true,
         },
       });
+      await tx.dentistNotification.create({
+        data: {
+          dentistId: body.dentistId,
+          patientId: patient.id,
+          title: "New appointment booked",
+          message: `${patient.firstName} ${patient.lastName} booked an appointment for ${startAt.toLocaleString(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })}.`,
+        },
+      });
+      return appt;
     });
 
     // If this appointment is virtual, create a linked consultation record (shown in Virtual Consultation pages).
@@ -153,6 +165,7 @@ appointmentsRouter.patch(
         res.status(403).json({ error: "Forbidden" });
         return;
       }
+      const prevStatus = existing.status;
       const updated = await prisma.appointment.update({
         where: { id },
         data: {
@@ -161,6 +174,19 @@ appointmentsRouter.patch(
         },
         include: { patient: true, dentist: { include: { user: { select: { email: true } } } } },
       });
+
+      if (body.status === AppointmentStatus.CONFIRMED && prevStatus !== AppointmentStatus.CONFIRMED) {
+        const when = updated.startAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        await prisma.notification.create({
+          data: {
+            patientId: updated.patientId,
+            appointmentId: updated.id,
+            title: "Appointment confirmed",
+            message: `Your appointment on ${when} has been confirmed by the dentist.`,
+          },
+        });
+      }
+
       res.json(updated);
     } catch (e) {
       next(e);

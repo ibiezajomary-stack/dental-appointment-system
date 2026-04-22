@@ -44,6 +44,7 @@ export function AdminTimeManagementPage() {
   const [rows, setRows] = useState<ClinicBlockRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [startAt, setStartAt] = useState<Dayjs | null>(() => dayjs().add(1, "hour").startOf("hour"));
   const [endAt, setEndAt] = useState<Dayjs | null>(() => dayjs().add(2, "hour").startOf("hour"));
@@ -76,6 +77,7 @@ export function AdminTimeManagementPage() {
     }
     setSaving(true);
     setError(null);
+    setSuccess(null);
     try {
       await api("/api/admin/clinic-time-blocks", {
         method: "POST",
@@ -87,6 +89,7 @@ export function AdminTimeManagementPage() {
       });
       setReason("");
       await load();
+      setSuccess("Clinic time block created.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create block");
     } finally {
@@ -96,11 +99,13 @@ export function AdminTimeManagementPage() {
 
   async function remove(id: string) {
     setError(null);
+    setSuccess(null);
     try {
       await api(`/api/admin/clinic-time-blocks/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
       await load();
+      setSuccess("Clinic time block removed.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not delete");
     }
@@ -119,6 +124,11 @@ export function AdminTimeManagementPage() {
       {error ? (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
+        </Alert>
+      ) : null}
+      {success ? (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
+          {success}
         </Alert>
       ) : null}
 

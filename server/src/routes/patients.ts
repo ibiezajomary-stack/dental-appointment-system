@@ -11,6 +11,7 @@ export const patientsRouter = Router();
 const updateSelfSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
+  sex: z.enum(["Female", "Male"]).optional().nullable(),
   phone: z.string().optional(),
   address: z.string().optional().nullable(),
   dateOfBirth: z.coerce.date().optional().nullable(),
@@ -30,7 +31,13 @@ patientsRouter.get("/me", requireAuth, requireRole(Role.PATIENT), async (req: Au
       res.status(404).json({ error: "Patient profile not found" });
       return;
     }
-    res.json(patient);
+    let age: number | null = null;
+    if (patient.dateOfBirth) {
+      const d = new Date(patient.dateOfBirth);
+      const diff = Date.now() - d.getTime();
+      age = Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
+    }
+    res.json({ ...patient, age });
   } catch (e) {
     next(e);
   }
@@ -401,6 +408,31 @@ patientsRouter.get(
         return;
       }
       res.json(patient);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+patientsRouter.delete(
+  "/:id",
+  requireAuth,
+  requireRole(Role.DENTIST, Role.ADMIN),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const id = patientIdParam(req);
+      const patient = await prisma.patient.findUnique({ where: { id }, select: { id: true, userId: true } });
+      if (!patient) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.storedFile.deleteMany({ where: { uploadedById: patient.userId } });
+        await tx.user.delete({ where: { id: patient.userId } });
+      });
+
+      res.json({ ok: true });
     } catch (e) {
       next(e);
     }

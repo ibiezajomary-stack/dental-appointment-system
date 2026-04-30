@@ -1,8 +1,9 @@
 import { Link as RouterLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import MenuIcon from "@mui/icons-material/Menu";
 import {
   AppBar,
+  Badge,
   Box,
   Button,
   Container,
@@ -16,15 +17,18 @@ import {
   Typography,
 } from "@mui/material";
 import { useAuth } from "../../auth/AuthContext";
+import { api } from "../../lib/api";
 import { AdminDashboardPage } from "./AdminDashboardPage";
+import { AdminNotificationsPage } from "./AdminNotificationsPage";
 import { AdminTimeManagementPage } from "./AdminTimeManagementPage";
 
 const NAV = [
   { label: "Overview", to: "/admin" },
   { label: "Time management", to: "/admin/time-management" },
+  { label: "Notifications", to: "/admin/notifications" },
 ] as const;
 
-function AdminNavLink({ to, label }: { to: string; label: string }) {
+function AdminNavLink({ to, label }: { to: string; label: ReactNode }) {
   const { pathname } = useLocation();
   const isHome = to === "/admin";
   const active = isHome
@@ -52,7 +56,41 @@ export function AdminShell() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
   if (user?.role !== "ADMIN") return <Navigate to="/" replace />;
+
+  const navItems = useMemo(() => {
+    return NAV.map((item) => ({
+      ...item,
+      labelNode:
+        item.to === "/admin/notifications" ? (
+          <Badge color="error" badgeContent={unread} invisible={unread === 0}>
+            <span>{item.label}</span>
+          </Badge>
+        ) : (
+          item.label
+        ),
+    }));
+  }, [unread]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    async function tick() {
+      try {
+        const res = await api<{ unread: number }>("/api/admin-notifications/me/unread-count");
+        if (!cancelled) setUnread(res.unread);
+      } catch {
+        /* ignore */
+      }
+      if (!cancelled) timer = window.setTimeout(tick, 10_000);
+    }
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "grey.50" }}>
@@ -83,8 +121,8 @@ export function AdminShell() {
               alignItems: "center",
             }}
           >
-            {NAV.map((item) => (
-              <AdminNavLink key={item.to} to={item.to} label={item.label} />
+            {navItems.map((item) => (
+              <AdminNavLink key={item.to} to={item.to} label={item.labelNode} />
             ))}
           </Box>
           <Box sx={{ flexGrow: { xs: 1, md: 0 } }} />
@@ -116,7 +154,7 @@ export function AdminShell() {
         </Box>
         <Divider />
         <List disablePadding>
-          {NAV.map((item) => (
+          {navItems.map((item) => (
             <ListItemButton
               key={item.to}
               component={RouterLink}
@@ -124,7 +162,7 @@ export function AdminShell() {
               onClick={() => setMobileOpen(false)}
               selected={location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)}
             >
-              <ListItemText primary={item.label} />
+              <ListItemText primary={item.labelNode} />
             </ListItemButton>
           ))}
           <ListItemButton component={RouterLink} to="/" onClick={() => setMobileOpen(false)}>
@@ -142,6 +180,7 @@ export function AdminShell() {
         <Routes>
           <Route index element={<AdminDashboardPage />} />
           <Route path="time-management" element={<AdminTimeManagementPage />} />
+          <Route path="notifications" element={<AdminNotificationsPage />} />
           <Route path="*" element={<Typography sx={{ p: 2 }}>Page not found</Typography>} />
         </Routes>
       </Container>

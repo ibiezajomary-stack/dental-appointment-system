@@ -57,7 +57,10 @@ const registerPatientSchema = z.object({
   password: z.string().min(8),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
+  sex: z.enum(["Female", "Male"]),
   dateOfBirth: z.coerce.date(),
+  acceptTerms: z.coerce.boolean(),
+  consentIdSubmission: z.coerce.boolean(),
 });
 
 authRouter.post(
@@ -69,6 +72,10 @@ authRouter.post(
   async (req, res, next) => {
     try {
       const parsed = registerPatientSchema.parse(req.body);
+      if (!parsed.acceptTerms || !parsed.consentIdSubmission) {
+        res.status(400).json({ error: "Terms acceptance and ID submission consent are required" });
+        return;
+      }
       const exists = await prisma.user.findUnique({ where: { email: parsed.email } });
       if (exists) {
         res.status(409).json({ error: "Email already registered" });
@@ -78,6 +85,10 @@ authRouter.post(
       const files = req.files as Record<string, Express.Multer.File[]> | undefined;
       const front = files?.idFront?.[0];
       const back = files?.idBack?.[0];
+      if (!front || !back) {
+        res.status(400).json({ error: "Valid ID front and back uploads are required" });
+        return;
+      }
 
       const passwordHash = await bcrypt.hash(parsed.password, 12);
       const user = await prisma.user.create({
@@ -89,6 +100,7 @@ authRouter.post(
             create: {
               firstName: parsed.firstName,
               lastName: parsed.lastName,
+              sex: parsed.sex,
               dateOfBirth: parsed.dateOfBirth,
               idDocument: {
                 create: {
@@ -112,17 +124,33 @@ authRouter.post(
           dentist: true,
         },
       });
+      const patientProfile = user.patient;
+      if (!patientProfile) {
+        res.status(500).json({ error: "Patient profile not created" });
+        return;
+      }
 
       // Notify dentist (single-dentist system) to review the new patient profile + uploaded ID.
       const dentist = await prisma.dentist.findFirst();
-      if (dentist && user.patient) {
+      if (dentist) {
         await prisma.dentistNotification.create({
           data: {
             dentistId: dentist.id,
-            patientId: user.patient.id,
+            patientId: patientProfile.id,
             title: "New patient account created",
-            message: `A new patient account was created: ${user.patient.firstName} ${user.patient.lastName}. Review profile and uploaded ID.`,
+            message: `A new patient account was created: ${patientProfile.firstName} ${patientProfile.lastName}. Review profile and uploaded ID.`,
           },
+        });
+      }
+
+      const admins = await prisma.user.findMany({ where: { role: Role.ADMIN }, select: { id: true } });
+      if (admins.length > 0) {
+        await prisma.adminNotification.createMany({
+          data: admins.map((a) => ({
+            userId: a.id,
+            title: "New patient registration",
+            message: `A new patient registered: ${patientProfile.firstName} ${patientProfile.lastName} (${parsed.email}). Please verify uploaded ID documents.`,
+          })),
         });
       }
 

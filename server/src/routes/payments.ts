@@ -6,16 +6,17 @@ import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import crypto from "node:crypto";
+import {
+  assertVirtualBookingServicesAllowed,
+  isVirtualFromAppointmentNotes,
+  isWithinDefaultBookingSegments,
+} from "../lib/slots.js";
 
 export const paymentsRouter = Router();
 
 function toBytes(buf: Buffer): Uint8Array<ArrayBuffer> {
   const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
   return new Uint8Array<ArrayBuffer>(ab);
-}
-
-function isVirtualFromNotes(notes: string | undefined): boolean {
-  return /Visit:\s*Virtual/i.test(notes ?? "");
 }
 
 const upload = multer({
@@ -66,13 +67,26 @@ paymentsRouter.post(
         res.status(400).json({ error: "startAt must be before endAt" });
         return;
       }
-      const isVirtual = isVirtualFromNotes(body.notes);
+      const isVirtual = isVirtualFromAppointmentNotes(body.notes);
       const files = req.files as Record<string, Express.Multer.File[]> | undefined;
       const proof = files?.proof?.[0];
       const teethPhoto = files?.teethPhoto?.[0];
       if (isVirtual && !proof) {
         res.status(400).json({ error: "proof file required" });
         return;
+      }
+      if (!isWithinDefaultBookingSegments(startAt, endAt)) {
+        res.status(400).json({ error: "Appointment time is outside clinic booking hours" });
+        return;
+      }
+      try {
+        assertVirtualBookingServicesAllowed(body.notes);
+      } catch (e) {
+        if (e instanceof Error && e.message === "VIRTUAL_SERVICES_INVALID") {
+          res.status(400).json({ error: "Virtual visits may only request General Consultation" });
+          return;
+        }
+        throw e;
       }
 
       const created = await prisma.$transaction(async (tx) => {

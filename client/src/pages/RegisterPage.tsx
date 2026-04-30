@@ -31,7 +31,8 @@ export function RegisterPage() {
   const [birthday, setBirthday] = useState("");
   const [idFront, setIdFront] = useState<File | null>(null);
   const [idBack, setIdBack] = useState<File | null>(null);
-  const [agreed, setAgreed] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [consentIdSubmission, setConsentIdSubmission] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -45,8 +46,8 @@ export function RegisterPage() {
     setError(null);
     setBusy(true);
     try {
-      if (!agreed) {
-        setError("Please accept the Terms & Data Privacy consent to create an account.");
+      if (!acceptTerms || !consentIdSubmission) {
+        setError("Please accept the Terms & Conditions and consent to ID submission.");
         setBusy(false);
         return;
       }
@@ -76,14 +77,22 @@ export function RegisterPage() {
         setBusy(false);
         return;
       }
+      if (!idFront || !idBack) {
+        setError("Valid ID front and back uploads are required.");
+        setBusy(false);
+        return;
+      }
       const fd = new FormData();
       fd.set("email", email);
       fd.set("password", password);
       fd.set("firstName", fn);
       fd.set("lastName", lastName.trim());
+      fd.set("sex", sex);
       fd.set("dateOfBirth", birthday);
-      if (idFront) fd.set("idFront", idFront);
-      if (idBack) fd.set("idBack", idBack);
+      fd.set("acceptTerms", "true");
+      fd.set("consentIdSubmission", "true");
+      fd.set("idFront", idFront);
+      fd.set("idBack", idBack);
 
       const res = await api<{ token: string; user: unknown }>("/api/auth/register/patient", {
         method: "POST",
@@ -163,7 +172,7 @@ export function RegisterPage() {
             />
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2, mb: 0.5 }}>
-            Valid ID (front)
+            Valid ID (front) — required
           </Typography>
           <Box
             sx={{
@@ -191,7 +200,7 @@ export function RegisterPage() {
             </Typography>
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-            Valid ID (back)
+            Valid ID (back) — required
           </Typography>
           <Box
             sx={{
@@ -219,7 +228,7 @@ export function RegisterPage() {
             </Typography>
           </Box>
           <Typography variant="caption" color="text.secondary">
-            ID uploads are optional. Accepted: images or PDF (max 12MB each).
+            Accepted: images or PDF (max 12MB each). Your dentist/admin will be notified to verify your ID.
           </Typography>
           <TextField
             label="Email"
@@ -239,20 +248,35 @@ export function RegisterPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          <Box sx={{ mt: 1 }}>
+          <Box sx={{ mt: 1, display: "grid", gap: 1 }}>
             <FormControlLabel
               control={
                 <Checkbox
-                  checked={agreed}
-                  onChange={(e) => setAgreed(e.target.checked)}
+                  checked={acceptTerms}
+                  onChange={(e) => setAcceptTerms(e.target.checked)}
                   required
                   disabled={busy}
                 />
               }
               label={
                 <Typography variant="body2" color="text.secondary">
-                  I agree that I allow the system to collect and use my information for clinic services, in accordance
-                  with the Data Privacy Act.
+                  I agree to the Terms & Conditions and clinic data processing, in accordance with applicable privacy
+                  laws.
+                </Typography>
+              }
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={consentIdSubmission}
+                  onChange={(e) => setConsentIdSubmission(e.target.checked)}
+                  required
+                  disabled={busy}
+                />
+              }
+              label={
+                <Typography variant="body2" color="text.secondary">
+                  I consent to submitting my government ID for verification by the clinic.
                 </Typography>
               }
             />
@@ -263,7 +287,7 @@ export function RegisterPage() {
             color="primary"
             fullWidth
             sx={{ mt: 2, py: 1.25 }}
-            disabled={busy || !agreed}
+            disabled={busy || !acceptTerms || !consentIdSubmission}
           >
             {busy ? "Creating…" : "Create account"}
           </Button>

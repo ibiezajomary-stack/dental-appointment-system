@@ -19,6 +19,8 @@ import { paymentsRouter } from "./routes/payments.js";
 import { publicPaymentMethodsRouter } from "./routes/publicPaymentMethods.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { dentistNotificationsRouter } from "./routes/dentistNotifications.js";
+import { adminNotificationsRouter } from "./routes/adminNotifications.js";
+import { printRouter } from "./routes/print.js";
 
 const app = express();
 
@@ -62,6 +64,8 @@ app.use("/api/payments", paymentsRouter);
 app.use("/api/public-payment-methods", publicPaymentMethodsRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/dentist-notifications", dentistNotificationsRouter);
+app.use("/api/admin-notifications", adminNotificationsRouter);
+app.use("/api/print", printRouter);
 
 app.use(errorHandler);
 

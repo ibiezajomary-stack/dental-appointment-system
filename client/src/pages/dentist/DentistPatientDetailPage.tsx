@@ -1,13 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link as RouterLink, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import {
   Alert,
   Box,
   Button,
   Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControlLabel,
   Grid,
   Paper,
+  Stack,
   TextField,
   Typography,
 } from "@mui/material";
@@ -82,10 +87,14 @@ type Dossier = {
 
 export function DentistPatientDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [dossier, setDossier] = useState<Dossier | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const [address, setAddress] = useState("");
   const [referredBy, setReferredBy] = useState("");
@@ -127,6 +136,17 @@ export function DentistPatientDetailPage() {
     setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
   }
 
+  async function openPdf(path: string) {
+    const token = getToken();
+    const res = await fetch(`${getApiBase()}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!res.ok) throw new Error(`PDF failed (${res.status})`);
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    window.open(objUrl, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+  }
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -206,6 +226,50 @@ export function DentistPatientDetailPage() {
     }
   }
 
+  const historyQ = historySearch.trim().toLowerCase();
+  const filteredAppointments = useMemo(() => {
+    if (!dossier) return [];
+    if (!historyQ) return dossier.appointments;
+    return dossier.appointments.filter((a) => {
+      const hay = `${a.status} ${a.notes ?? ""} ${new Date(a.startAt).toLocaleString()}`.toLowerCase();
+      return hay.includes(historyQ);
+    });
+  }, [dossier, historyQ]);
+
+  const filteredConsultations = useMemo(() => {
+    if (!dossier) return [];
+    if (!historyQ) return dossier.consultations;
+    return dossier.consultations.filter((c) => {
+      const noteText = c.notes.map((n) => `${n.diagnosis ?? ""} ${n.notes ?? ""}`).join(" ");
+      const hay = `${c.status} ${noteText} ${new Date(c.createdAt).toLocaleString()}`.toLowerCase();
+      return hay.includes(historyQ);
+    });
+  }, [dossier, historyQ]);
+
+  const filteredToothRecords = useMemo(() => {
+    if (!dossier) return [];
+    if (!historyQ) return dossier.toothRecords;
+    return dossier.toothRecords.filter((t) => {
+      const hay = `${t.toothFdi} ${t.condition ?? ""} ${t.procedure ?? ""} ${new Date(t.recordedAt).toLocaleString()}`.toLowerCase();
+      return hay.includes(historyQ);
+    });
+  }, [dossier, historyQ]);
+
+  async function deletePatientRecord() {
+    if (!id) return;
+    setDeleteBusy(true);
+    setError(null);
+    try {
+      await api(`/api/patients/${encodeURIComponent(id)}`, { method: "DELETE" });
+      navigate("/dentist/patients");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeleteBusy(false);
+      setDeleteOpen(false);
+    }
+  }
+
   if (!id) return null;
 
   if (error && !dossier) {
@@ -223,9 +287,24 @@ export function DentistPatientDetailPage() {
 
   return (
     <Box>
-      <Button component={RouterLink} to="/dentist/patients" sx={{ mb: 2 }}>
-        ← Patients
-      </Button>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mb: 2 }} alignItems={{ sm: "center" }}>
+        <Button component={RouterLink} to="/dentist/patients">
+          ← Patients
+        </Button>
+        <Box sx={{ flexGrow: 1 }} />
+        <Button variant="outlined" sx={{ textTransform: "none" }} onClick={() => void openPdf(`/api/print/patients/${id}/prescription`)}>
+          Print prescription (PDF)
+        </Button>
+        <Button variant="outlined" sx={{ textTransform: "none" }} onClick={() => void openPdf(`/api/print/patients/${id}/dental-certificate`)}>
+          Print dental certificate (PDF)
+        </Button>
+        <Button variant="outlined" sx={{ textTransform: "none" }} onClick={() => void openPdf(`/api/print/patients/${id}/history`)}>
+          Print history (PDF)
+        </Button>
+        <Button color="error" variant="contained" sx={{ textTransform: "none" }} onClick={() => setDeleteOpen(true)}>
+          Delete patient record
+        </Button>
+      </Stack>
 
       {saveMsg && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaveMsg(null)}>
@@ -368,12 +447,27 @@ export function DentistPatientDetailPage() {
 
       <Paper sx={{ p: 2, mb: 2 }}>
         <Typography variant="h6" gutterBottom>
+          Patient history
+        </Typography>
+        <TextField
+          label="Search history"
+          fullWidth
+          size="small"
+          value={historySearch}
+          onChange={(e) => setHistorySearch(e.target.value)}
+          placeholder="Search appointments, consultations, chart entries…"
+          sx={{ mb: 2 }}
+        />
+
+        <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1 }}>
           Appointments
         </Typography>
-        {dossier.appointments.length === 0 ? (
-          <Typography color="text.secondary">No appointments.</Typography>
+        {filteredAppointments.length === 0 ? (
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            No matching appointments.
+          </Typography>
         ) : (
-          dossier.appointments.map((a) => (
+          filteredAppointments.map((a) => (
             <Box
               key={a.id}
               sx={{
@@ -406,6 +500,42 @@ export function DentistPatientDetailPage() {
                 </Box>
               )}
             </Box>
+          ))
+        )}
+
+        <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1, mt: 2 }}>
+          Consultations
+        </Typography>
+        {filteredConsultations.length === 0 ? (
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            No matching consultations.
+          </Typography>
+        ) : (
+          filteredConsultations.map((c) => (
+            <Box key={c.id} sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                {new Date(c.createdAt).toLocaleString()} — {c.status}
+              </Typography>
+              {c.notes.map((n, i) => (
+                <Typography key={i} variant="caption" display="block" color="text.secondary">
+                  {n.diagnosis || n.notes || "—"}
+                </Typography>
+              ))}
+            </Box>
+          ))
+        )}
+
+        <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1, mt: 2 }}>
+          Tooth chart entries
+        </Typography>
+        {filteredToothRecords.length === 0 ? (
+          <Typography color="text.secondary">No matching chart entries.</Typography>
+        ) : (
+          filteredToothRecords.map((t) => (
+            <Typography key={`${t.toothFdi}-${t.recordedAt}`} variant="body2" sx={{ py: 0.5 }}>
+              <strong>{new Date(t.recordedAt).toLocaleString()}</strong> — FDI {t.toothFdi}: {t.condition ?? "—"} /{" "}
+              {t.procedure ?? "—"}
+            </Typography>
           ))
         )}
       </Paper>
@@ -517,31 +647,26 @@ export function DentistPatientDetailPage() {
         <DentistOdontogramPanel patientId={dossier.id} ageYears={dossier.age ?? null} />
       </Paper>
 
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Typography variant="h6" gutterBottom>
-          Recent consultation notes (tele-dental / visits)
-        </Typography>
-        {dossier.consultations.length === 0 ? (
-          <Typography color="text.secondary">None.</Typography>
-        ) : (
-          dossier.consultations.map((c) => (
-            <Box key={c.id} sx={{ mb: 2 }}>
-              <Typography variant="body2">
-                {new Date(c.createdAt).toLocaleString()} — {c.status}
-              </Typography>
-              {c.notes.map((n, i) => (
-                <Typography key={i} variant="caption" display="block" color="text.secondary">
-                  {n.diagnosis || n.notes || "—"}
-                </Typography>
-              ))}
-            </Box>
-          ))
-        )}
-      </Paper>
-
       <Button variant="contained" size="large" disabled={busy} onClick={() => void saveReport()}>
         Save consultation report &amp; patient details
       </Button>
+
+      <Dialog open={deleteOpen} onClose={() => (!deleteBusy ? setDeleteOpen(false) : null)}>
+        <DialogTitle>Delete patient record?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            This permanently deletes this patient&apos;s account and associated clinic data. This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteOpen(false)} disabled={deleteBusy}>
+            Cancel
+          </Button>
+          <Button color="error" variant="contained" disabled={deleteBusy} onClick={() => void deletePatientRecord()}>
+            {deleteBusy ? "Deleting…" : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

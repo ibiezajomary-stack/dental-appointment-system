@@ -1,12 +1,27 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { ConsultationStatus, Role } from "@prisma/client";
+import { ConsultationStatus, Prisma, Role } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
 
 export const consultationsRouter = Router();
+
+async function assertSingleInProgressSession(tx: Prisma.TransactionClient, dentistId: string, exceptConsultationId: string) {
+  const other = await tx.consultation.findFirst({
+    where: {
+      dentistId,
+      status: ConsultationStatus.IN_PROGRESS,
+      NOT: { id: exceptConsultationId },
+    },
+    select: { id: true },
+  });
+  if (other) {
+    const err = new Error("CONSULT_IN_PROGRESS_CONFLICT");
+    throw err;
+  }
+}
 
 const createSchema = z.object({
   dentistId: z.string(),
@@ -187,13 +202,16 @@ consultationsRouter.post(
         return;
       }
       const wasInProgress = existing.status === ConsultationStatus.IN_PROGRESS;
-      const updated = await prisma.consultation.update({
-        where: { id },
-        data: {
-          status: ConsultationStatus.IN_PROGRESS,
-          startedAt: existing.startedAt ?? new Date(),
-          videoRoomId: existing.videoRoomId ?? `dental-${randomUUID().slice(0, 8)}`,
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        await assertSingleInProgressSession(tx, existing.dentistId, existing.id);
+        return tx.consultation.update({
+          where: { id },
+          data: {
+            status: ConsultationStatus.IN_PROGRESS,
+            startedAt: existing.startedAt ?? new Date(),
+            videoRoomId: existing.videoRoomId ?? `dental-${randomUUID().slice(0, 8)}`,
+          },
+        });
       });
 
       if (!wasInProgress) {
@@ -209,6 +227,10 @@ consultationsRouter.post(
 
       res.json(updated);
     } catch (e) {
+      if (e instanceof Error && e.message === "CONSULT_IN_PROGRESS_CONFLICT") {
+        res.status(409).json({ error: "Another virtual consultation is already in progress" });
+        return;
+      }
       next(e);
     }
   },
@@ -255,13 +277,16 @@ consultationsRouter.post(
         }));
 
       const wasInProgress = c.status === ConsultationStatus.IN_PROGRESS;
-      const updated = await prisma.consultation.update({
-        where: { id: c.id },
-        data: {
-          status: ConsultationStatus.IN_PROGRESS,
-          startedAt: c.startedAt ?? new Date(),
-          videoRoomId: c.videoRoomId ?? `dental-${randomUUID().slice(0, 8)}`,
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        await assertSingleInProgressSession(tx, c.dentistId, c.id);
+        return tx.consultation.update({
+          where: { id: c.id },
+          data: {
+            status: ConsultationStatus.IN_PROGRESS,
+            startedAt: c.startedAt ?? new Date(),
+            videoRoomId: c.videoRoomId ?? `dental-${randomUUID().slice(0, 8)}`,
+          },
+        });
       });
 
       if (!wasInProgress) {
@@ -277,6 +302,10 @@ consultationsRouter.post(
 
       res.json(updated);
     } catch (e) {
+      if (e instanceof Error && e.message === "CONSULT_IN_PROGRESS_CONFLICT") {
+        res.status(409).json({ error: "Another virtual consultation is already in progress" });
+        return;
+      }
       next(e);
     }
   },

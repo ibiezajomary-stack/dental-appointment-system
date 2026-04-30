@@ -1,7 +1,8 @@
 import { Link as RouterLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AppBar,
+  Alert,
   Badge,
   Box,
   Button,
@@ -13,6 +14,7 @@ import {
   List,
   ListItemButton,
   ListItemText,
+  Snackbar,
   ThemeProvider,
   Toolbar,
   Typography,
@@ -82,6 +84,8 @@ export function PatientShell() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  const prevUnread = useRef<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   if (user?.role !== "PATIENT") return <Navigate to="/" replace />;
 
   const isHome = location.pathname === "/patient" || location.pathname === "/patient/";
@@ -107,11 +111,18 @@ export function PatientShell() {
     async function tick() {
       try {
         const res = await api<{ unread: number }>("/api/notifications/unread-count");
-        if (!cancelled) setUnread(res.unread);
+        if (!cancelled) {
+          const prev = prevUnread.current;
+          if (prev !== null && res.unread > prev) {
+            setToast("You have a new notification.");
+          }
+          prevUnread.current = res.unread;
+          setUnread(res.unread);
+        }
       } catch {
         // ignore polling errors (e.g., transient network)
       }
-      if (!cancelled) timer = window.setTimeout(tick, 10_000);
+      if (!cancelled) timer = window.setTimeout(tick, 5000);
     }
 
     void tick();
@@ -225,6 +236,17 @@ export function PatientShell() {
             </Button>
           </Box>
         </Drawer>
+
+        <Snackbar
+          open={Boolean(toast)}
+          autoHideDuration={6000}
+          onClose={() => setToast(null)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        >
+          <Alert onClose={() => setToast(null)} severity="info" variant="filled" sx={{ width: "100%" }}>
+            {toast}
+          </Alert>
+        </Snackbar>
 
         <Box
           component="main"

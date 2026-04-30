@@ -5,12 +5,13 @@ import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import crypto from "node:crypto";
+import {
+  assertVirtualBookingServicesAllowed,
+  isVirtualFromAppointmentNotes,
+  isWithinDefaultBookingSegments,
+} from "../lib/slots.js";
 
 export const appointmentsRouter = Router();
-
-function isVirtualFromNotes(notes: string | undefined): boolean {
-  return /Visit:\s*Virtual/i.test(notes ?? "");
-}
 
 const createSchema = z.object({
   dentistId: z.string().min(1),
@@ -37,6 +38,19 @@ appointmentsRouter.post("/", requireAuth, requireRole(Role.PATIENT), async (req:
     if (!(startAt < endAt)) {
       res.status(400).json({ error: "startAt must be before endAt" });
       return;
+    }
+    if (!isWithinDefaultBookingSegments(startAt, endAt)) {
+      res.status(400).json({ error: "Appointment time is outside clinic booking hours" });
+      return;
+    }
+    try {
+      assertVirtualBookingServicesAllowed(body.notes);
+    } catch (e) {
+      if (e instanceof Error && e.message === "VIRTUAL_SERVICES_INVALID") {
+        res.status(400).json({ error: "Virtual visits may only request General Consultation" });
+        return;
+      }
+      throw e;
     }
 
     const created = await prisma.$transaction(async (tx) => {
@@ -79,7 +93,7 @@ appointmentsRouter.post("/", requireAuth, requireRole(Role.PATIENT), async (req:
     });
 
     // If this appointment is virtual, create a linked consultation record (shown in Virtual Consultation pages).
-    if (isVirtualFromNotes(body.notes)) {
+    if (isVirtualFromAppointmentNotes(body.notes)) {
       // Safe to run outside the transaction since clash-check already happened; consult creation doesn't affect slot availability.
       const apptId = created.id;
       const exists = await prisma.consultation.findFirst({ where: { appointmentId: apptId } });
@@ -181,8 +195,8 @@ appointmentsRouter.patch(
           data: {
             patientId: updated.patientId,
             appointmentId: updated.id,
-            title: "Appointment confirmed",
-            message: `Your appointment on ${when} has been confirmed by the dentist.`,
+            title: "Appointment accepted",
+            message: `Your appointment on ${when} has been accepted/confirmed by the dentist.`,
           },
         });
       }

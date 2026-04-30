@@ -62,11 +62,24 @@ model User {
   createdAt                 DateTime             @default(now())
   patient                   Patient?
   dentist                   Dentist?
+  adminNotifications        AdminNotification[]
   consultationNotesAuthored ConsultationNote[]   @relation("NoteAuthor")
   toothRecordsRecorded      ToothRecord[]        @relation("ToothRecorder")
   filesUploaded             StoredFile[]         @relation("FileUploader")
   clinicTimeBlocksCreated   ClinicTimeBlock[]    @relation("ClinicTimeBlockCreator")
   paymentsVerified          AppointmentPayment[] @relation("PaymentVerifier")
+}
+
+model AdminNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String    @db.Text
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }
 
 /// Clinic-wide unavailability: no bookings may start during [startAt, endAt).
@@ -89,6 +102,7 @@ model Patient {
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   firstName        String
   lastName         String
+  sex              String?
   phone            String?
   dateOfBirth      DateTime?
   address          String?  @db.Text

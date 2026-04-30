@@ -429,6 +429,8 @@ export function DentistAppointmentsPage() {
                   const parsed = parseBookingNotes(detailRow.notes);
                   const rows2: { label: string; value: string }[] = [];
                   const keys = [
+                    "Appointment for",
+                    "Age (years)",
                     "Requested services",
                     "Visit",
                     "Gender",

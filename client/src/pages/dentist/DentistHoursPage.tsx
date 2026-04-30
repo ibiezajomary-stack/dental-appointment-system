@@ -39,9 +39,13 @@ import {
 } from "@mui/material";
 import { api } from "../../lib/api";
 
-/** Must match server `slots.ts` — booking is only offered inside this window, minus your blocks. */
-const DEFAULT_SCHEDULE_START_MINUTES = 6 * 60;
-const DEFAULT_SCHEDULE_END_MINUTES = 22 * 60;
+/** Must match server `slots.ts` — booking is only offered inside these segments, minus your blocks. */
+const DEFAULT_BOOKING_SEGMENTS_MINUTES: readonly { start: number; end: number }[] = [
+  { start: 9 * 60, end: 12 * 60 },
+  { start: 13 * 60, end: 15 * 60 },
+] as const;
+const DEFAULT_SCHEDULE_START_MINUTES = DEFAULT_BOOKING_SEGMENTS_MINUTES[0].start;
+const DEFAULT_SCHEDULE_END_MINUTES = DEFAULT_BOOKING_SEGMENTS_MINUTES[DEFAULT_BOOKING_SEGMENTS_MINUTES.length - 1].end;
 
 type Block = { dayOfWeek: number; startMinutes: number; endMinutes: number };
 
@@ -100,11 +104,19 @@ function minutesToTimeDayjs(m: number): Dayjs {
 }
 
 function formatScheduleWindow(): string {
-  const s = new Date();
-  s.setHours(6, 0, 0, 0);
-  const e = new Date();
-  e.setHours(22, 0, 0, 0);
-  return `${s.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}–${e.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  const parts = DEFAULT_BOOKING_SEGMENTS_MINUTES.map((seg) => {
+    const s = new Date();
+    s.setHours(0, 0, 0, 0);
+    s.setMinutes(seg.start);
+    const e = new Date();
+    e.setHours(0, 0, 0, 0);
+    e.setMinutes(seg.end);
+    return `${s.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}–${e.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    })}`;
+  });
+  return parts.join(" and ");
 }
 
 function formatMinutesAsTime(mins: number): string {

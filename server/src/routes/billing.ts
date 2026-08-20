@@ -62,3 +62,88 @@ billingRouter.get("/", requireAuth, async (req: AuthedRequest, res, next) => {
     next(e);
   }
 });
+
+// Sales Report endpoints (for dentist manual payment recording)
+const createSalesReportSchema = z.object({
+  amountCents: z.coerce.number().int().positive(),
+  paymentDate: z.string().trim().min(1),
+  description: z.string().optional(),
+});
+
+billingRouter.post(
+  "/sales-reports",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      const body = createSalesReportSchema.parse(req.body);
+      const row = await prisma.salesReport.create({
+        data: {
+          dentistId: dentist.id,
+          amountCents: body.amountCents,
+          paymentDate: new Date(body.paymentDate),
+          description: body.description,
+        },
+      });
+      res.status(201).json(row);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+billingRouter.get(
+  "/sales-reports",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      const rows = await prisma.salesReport.findMany({
+        where: { dentistId: dentist.id },
+        orderBy: { paymentDate: "desc" },
+      });
+      res.json(rows);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+billingRouter.delete(
+  "/sales-reports/:id",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      const id = typeof req.params.id === "string" ? req.params.id : req.params.id[0];
+      const record = await prisma.salesReport.findUnique({ where: { id } });
+      if (!record) {
+        res.status(404).json({ error: "Sales report not found" });
+        return;
+      }
+      if (record.dentistId !== dentist.id) {
+        res.status(403).json({ error: "Unauthorized" });
+        return;
+      }
+      await prisma.salesReport.delete({ where: { id } });
+      res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  },
+);

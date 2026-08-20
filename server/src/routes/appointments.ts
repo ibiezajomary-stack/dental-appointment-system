@@ -201,6 +201,18 @@ appointmentsRouter.patch(
         });
       }
 
+      if (body.status === AppointmentStatus.CANCELLED && prevStatus !== AppointmentStatus.CANCELLED) {
+        const when = updated.startAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        await prisma.notification.create({
+          data: {
+            patientId: updated.patientId,
+            appointmentId: updated.id,
+            title: "Appointment cancelled",
+            message: `Your appointment on ${when} was cancelled/rejected by the dentist.`,
+          },
+        });
+      }
+
       res.json(updated);
     } catch (e) {
       next(e);
@@ -232,6 +244,17 @@ appointmentsRouter.delete(
         where: { id },
         data: { status: AppointmentStatus.CANCELLED },
       });
+      if ((isDentistOwner || isAdmin) && existing.status !== AppointmentStatus.CANCELLED) {
+        const when = existing.startAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        await prisma.notification.create({
+          data: {
+            patientId: existing.patientId,
+            appointmentId: existing.id,
+            title: "Appointment cancelled",
+            message: `Your appointment on ${when} was cancelled/rejected by the dentist.`,
+          },
+        });
+      }
       res.json(updated);
     } catch (e) {
       next(e);

@@ -175,6 +175,7 @@ export function BookingWorkspace({
   const [comments, setComments] = useState("");
   const [teethPhoto, setTeethPhoto] = useState<File | null>(null);
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
+  const [refundGcashNumber, setRefundGcashNumber] = useState("");
   const [gcash, setGcash] = useState<DentistGcash | null>(null);
   const [gcashError, setGcashError] = useState<string | null>(null);
   const [amountPhp, setAmountPhp] = useState("500");
@@ -393,6 +394,7 @@ export function BookingWorkspace({
       fd.set("amountCents", String(cents));
       if (paymentProof) fd.set("proof", paymentProof);
       if (teethPhoto) fd.set("teethPhoto", teethPhoto);
+      if (visitMode === "virtual" && refundGcashNumber) fd.set("refundGcashNumber", refundGcashNumber.trim());
 
       const token = getToken();
       const res = await fetch(`${getApiBase()}/api/payments/appointments`, {
@@ -709,6 +711,16 @@ export function BookingWorkspace({
                         size="small"
                         sx={{ mb: 1.5 }}
                         inputProps={{ inputMode: "decimal" }}
+                      />
+                      <TextField
+                        label="Your GCash number (for refunds)"
+                        placeholder="09xxxxxxxxx"
+                        value={refundGcashNumber}
+                        onChange={(e) => setRefundGcashNumber(e.target.value)}
+                        size="small"
+                        fullWidth
+                        sx={{ mb: 1.5 }}
+                        helperText="Enter your GCash number for refunds"
                       />
                       <Button
                         variant="outlined"

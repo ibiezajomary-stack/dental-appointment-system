@@ -42,6 +42,7 @@ enum PaymentVerificationStatus {
   PENDING
   VERIFIED
   REJECTED
+  REFUNDED
 }
 
 /// Per-surface charting on odontogram (paper-style schematic).
@@ -203,6 +204,7 @@ model Dentist {
   consultations     Consultation[]
   appointmentPayments AppointmentPayment[]
   notifications     DentistNotification[]
+  salesReports      SalesReport[]
 }
 
 /// One-time dentist blocks for a specific date/time range (local time as entered; stored as timestamp).
@@ -301,6 +303,8 @@ model AppointmentPayment {
   proofBlob        Bytes?
   proofMimeType    String
   proofOriginalName String
+  /// Patient's GCash number for refunds (virtual consultations only)
+  refundGcashNumber String?
   createdAt    DateTime                  @default(now())
   verifiedAt   DateTime?
   verifiedById String?
@@ -386,4 +390,18 @@ model BillingRecord {
   status        BillingStatus @default(PENDING)
   description   String?       @db.Text
   createdAt     DateTime      @default(now())
+}
+
+/// Dentist sales report: manually added payment records
+model SalesReport {
+  id            String    @id @default(cuid())
+  dentistId     String
+  dentist       Dentist   @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  amountCents   Int
+  paymentDate   DateTime
+  description   String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([dentistId, paymentDate])
 }

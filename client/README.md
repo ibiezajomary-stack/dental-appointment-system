@@ -21,6 +21,8 @@ the deployed server project:
 VITE_API_URL=https://your-server-project.vercel.app
 ```
 
+Use only the server project origin. Do not append `/api` or `/api/auth/login`.
+
 In the server project, set `CLIENT_ORIGIN` to the deployed client URL:
 
 ```text

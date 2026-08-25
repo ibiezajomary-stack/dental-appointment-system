@@ -1,4 +1,5 @@
-const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const configuredApiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const apiBase = configuredApiBase || window.location.origin;
 
 export function getApiBase(): string {
   return apiBase;
@@ -27,14 +28,22 @@ export async function api<T = unknown>(
     headers.set("Content-Type", "application/json");
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(`${apiBase}${path}`, { ...options, headers });
+  const url = `${apiBase}${path}`;
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch {
+    throw new Error(
+      `Cannot reach the API at ${url}. Check the VITE_API_URL environment variable and server deployment.`,
+    );
+  }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg =
       typeof data.error === "string"
         ? data.error
-        : `Request failed (${res.status})`;
+        : `Request failed (${res.status}) [${options.method ?? "GET"} ${url}]`;
     throw new Error(msg);
   }
   return data as T;

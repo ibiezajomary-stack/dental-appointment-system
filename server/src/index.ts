@@ -29,7 +29,7 @@ export default app;
 
 const allowedOrigins = (config.clientOrigin ?? "")
   .split(",")
-  .map((s) => s.trim())
+  .map((s) => s.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
 app.use(
@@ -42,7 +42,7 @@ app.use(
       if (config.nodeEnv === "development") return cb(null, true);
 
       // In non-dev, require explicit allow-list (comma-separated in CLIENT_ORIGIN).
-      if (allowedOrigins.includes(origin)) return cb(null, true);
+      if (allowedOrigins.includes(origin.replace(/\/$/, ""))) return cb(null, true);
       return cb(new Error("Not allowed by CORS"));
     },
     credentials: true,

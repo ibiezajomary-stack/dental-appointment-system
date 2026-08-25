@@ -11,6 +11,26 @@ Currently, two official plugins are available:
 
 The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
+## Vercel deployment
+
+Deploy `client` and `server` as separate Vercel projects. In the client project,
+add this environment variable for the Production environment, using the URL of
+the deployed server project:
+
+```text
+VITE_API_URL=https://your-server-project.vercel.app
+```
+
+In the server project, set `CLIENT_ORIGIN` to the deployed client URL:
+
+```text
+CLIENT_ORIGIN=https://your-client-project.vercel.app
+```
+
+Both projects must be redeployed after adding these variables. Without
+`VITE_API_URL`, browser requests such as `/api/auth/login` are handled by the
+client SPA rewrite and return `404` instead of reaching the Express API.
+
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:

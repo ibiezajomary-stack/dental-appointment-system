@@ -1,4 +1,4 @@
-const apiBase = import.meta.env.VITE_API_URL ?? "";
+const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 export function getApiBase(): string {
   return apiBase;

@@ -38,6 +38,7 @@ const createPaymentSchema = z.object({
   endAt: z.string().datetime(),
   notes: z.string().optional(),
   amountCents: z.coerce.number().int().nonnegative().default(0),
+  refundGcashNumber: z.string().optional(), // Optional: patient's GCash number for refunds
 });
 
 paymentsRouter.post(
@@ -89,14 +90,15 @@ paymentsRouter.post(
         throw e;
       }
 
-      const created = await prisma.$transaction(async (tx) => {
-        const clash = await tx.appointment.findFirst({
-          where: {
-            dentistId: body.dentistId,
-            status: { not: "CANCELLED" },
-            AND: [{ startAt: { lt: endAt } }, { endAt: { gt: startAt } }],
-          },
-        });
+      const created = await prisma.$transaction(
+        async (tx) => {
+          const clash = await tx.appointment.findFirst({
+            where: {
+              dentistId: body.dentistId,
+              status: { not: "CANCELLED" },
+              AND: [{ startAt: { lt: endAt } }, { endAt: { gt: startAt } }],
+            },
+          });
         if (clash) {
           throw new Error("SLOT_TAKEN");
         }
@@ -153,22 +155,28 @@ paymentsRouter.post(
           });
         }
 
-        const payment = proof
-          ? await tx.appointmentPayment.create({
-              data: {
-                appointmentId: appt.id,
-                patientId: patient.id,
-                dentistId: body.dentistId,
-                amountCents: body.amountCents,
-                status: PaymentVerificationStatus.PENDING,
-                proofBlob: toBytes(proof.buffer),
-                proofMimeType: proof.mimetype,
-                proofOriginalName: proof.originalname,
-              },
-            })
-          : null;
-        return { appointment: appt, payment };
-      });
+          const payment = proof
+            ? await tx.appointmentPayment.create({
+                data: {
+                  appointmentId: appt.id,
+                  patientId: patient.id,
+                  dentistId: body.dentistId,
+                  amountCents: body.amountCents,
+                  status: PaymentVerificationStatus.PENDING,
+                  proofBlob: toBytes(proof.buffer),
+                  proofMimeType: proof.mimetype,
+                  proofOriginalName: proof.originalname,
+                  refundGcashNumber: body.refundGcashNumber?.trim() || null,
+                },
+              })
+            : null;
+          return { appointment: appt, payment };
+        },
+        {
+          timeout: 20000,
+          maxWait: 20000,
+        },
+      );
 
       res.status(201).json({
         appointment: created.appointment,
@@ -330,6 +338,7 @@ paymentsRouter.get(
           amountCents: r.amountCents,
           createdAt: r.createdAt,
           verifiedAt: r.verifiedAt,
+          refundGcashNumber: r.refundGcashNumber,
           appointment: {
             id: r.appointmentId,
             startAt: r.appointment.startAt,
@@ -394,8 +403,16 @@ paymentsRouter.get(
 );
 
 const verifySchema = z.object({
-  status: z.enum(["VERIFIED", "REJECTED"]),
+  status: z.enum(["VERIFIED", "REJECTED", "REFUNDED"]),
 });
+
+function formatPhpCents(amountCents: number): string {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 2,
+  }).format(amountCents / 100);
+}
 
 paymentsRouter.patch(
   "/dentists/me/appointment-payments/:id",
@@ -415,14 +432,45 @@ paymentsRouter.patch(
         res.status(404).json({ error: "Not found" });
         return;
       }
-      const updated = await prisma.appointmentPayment.update({
-        where: { id },
-        data: {
-          status: body.status === "VERIFIED" ? PaymentVerificationStatus.VERIFIED : PaymentVerificationStatus.REJECTED,
-          verifiedAt: new Date(),
-          verifiedById: req.userId!,
-        },
+
+      const paymentStatus =
+        body.status === "VERIFIED"
+          ? PaymentVerificationStatus.VERIFIED
+          : body.status === "REFUNDED"
+            ? PaymentVerificationStatus.REFUNDED
+            : PaymentVerificationStatus.REJECTED;
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const payment = await tx.appointmentPayment.update({
+          where: { id },
+          data: {
+            status: paymentStatus,
+            verifiedAt: new Date(),
+            verifiedById: req.userId!,
+          },
+        });
+
+        if (body.status === "REFUNDED") {
+          const appt = await tx.appointment.findUnique({ where: { id: payment.appointmentId } });
+          const refundTarget = existing.refundGcashNumber?.trim() || "the number you provided";
+          const appointmentDate = appt ? new Date(appt.startAt).toLocaleString(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }) : "your appointment";
+
+          await tx.notification.create({
+            data: {
+              patientId: payment.patientId,
+              appointmentId: payment.appointmentId,
+              title: "Refund processed",
+              message: `Your refund of ${formatPhpCents(payment.amountCents)} for ${appointmentDate} has been processed to GCash number ${refundTarget}.`,
+            },
+          });
+        }
+
+        return payment;
       });
+
       res.json(updated);
     } catch (e) {
       next(e);

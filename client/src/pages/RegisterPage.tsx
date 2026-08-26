@@ -8,7 +8,9 @@ import {
   Container,
   FormControlLabel,
   FormControl,
+  IconButton,
   InputLabel,
+  InputAdornment,
   Link,
   MenuItem,
   Paper,
@@ -19,11 +21,23 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { api, setToken } from "../lib/api";
 
+// Validation helper functions
+const validateNameInput = (value: string): string => {
+  // Allow only letters, spaces, and hyphens
+  return value.replace(/[^a-zA-Z\s\-]/g, "");
+};
+
+const validateEmail = (value: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(value) || value === "";
+};
+
 export function RegisterPage() {
   const { refresh, user } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [lastName, setLastName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
@@ -56,6 +70,11 @@ export function RegisterPage() {
         setBusy(false);
         return;
       }
+      if (!validateEmail(email)) {
+        setError("Please enter a valid email address.");
+        setBusy(false);
+        return;
+      }
       if (!password || password.length < 8) {
         setError("Password must be at least 8 characters.");
         setBusy(false);
@@ -64,6 +83,13 @@ export function RegisterPage() {
       const fn = [firstName, middleName].filter(Boolean).join(" ").trim();
       if (!fn || !lastName.trim()) {
         setError("Please enter your first and last name.");
+        setBusy(false);
+        return;
+      }
+      // Validate that names contain only letters, spaces, and hyphens
+      const nameRegex = /^[a-zA-Z\s\-]+$/;
+      if (!nameRegex.test(fn) || !nameRegex.test(lastName)) {
+        setError("Names can only contain letters, spaces, and hyphens.");
         setBusy(false);
         return;
       }
@@ -125,23 +151,26 @@ export function RegisterPage() {
             fullWidth
             margin="normal"
             value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
+            onChange={(e) => setLastName(validateNameInput(e.target.value))}
             required
+            helperText="Letters only"
           />
           <TextField
             label="First name"
             fullWidth
             margin="normal"
             value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
+            onChange={(e) => setFirstName(validateNameInput(e.target.value))}
             required
+            helperText="Letters only"
           />
           <TextField
             label="Middle name"
             fullWidth
             margin="normal"
             value={middleName}
-            onChange={(e) => setMiddleName(e.target.value)}
+            onChange={(e) => setMiddleName(validateNameInput(e.target.value))}
+            helperText="Letters only"
           />
           <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2, mt: 1 }}>
             <FormControl fullWidth margin="normal">
@@ -237,16 +266,43 @@ export function RegisterPage() {
             margin="normal"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            error={email !== "" && !validateEmail(email)}
+            helperText={email !== "" && !validateEmail(email) ? "Valid email required" : ""}
             required
           />
           <TextField
             label="Password (min 8 characters)"
-            type="password"
+            type={showPassword ? "text" : "password"}
             fullWidth
             margin="normal"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    edge="end"
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      {showPassword ? (
+                        <>
+                          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </>
+                      ) : (
+                        <>
+                          <path d="m3 3 18 18" />
+                          <path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-3.1 4.1M6.2 6.2C3.5 8 2 12 2 12s3.5 7 10 7a10.8 10.8 0 0 0 3.4-.5" />
+                        </>
+                      )}
+                    </svg>
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
           />
           <Box sx={{ mt: 1, display: "grid", gap: 1 }}>
             <FormControlLabel

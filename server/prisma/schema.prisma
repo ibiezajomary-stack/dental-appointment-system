@@ -97,6 +97,23 @@ model ClinicTimeBlock {
   @@index([endAt])
 }
 
+enum IssuedDocumentType {
+  DENTAL_CERTIFICATE
+}
+
+model IssuedDocument {
+  id        String              @id @default(cuid())
+  patientId String
+  patient   Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  dentistId String
+  dentist   Dentist             @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  type      IssuedDocumentType
+  payload   Json
+  createdAt DateTime            @default(now())
+
+  @@index([patientId, type, createdAt])
+}
+
 model Patient {
   id               String   @id @default(cuid())
   userId           String   @unique
@@ -126,6 +143,7 @@ model Patient {
   idDocument       PatientIdDocument?
   notifications    Notification[]
   dentistNotifications DentistNotification[]
+  issuedDocuments  IssuedDocument[]
 }
 
 model Notification {
@@ -196,6 +214,7 @@ model Dentist {
   specialty     String?
   displayName   String?
   phone         String?
+  clinicAddress String?              @db.Text
   bio           String?              @db.Text
   unavailableBlocks DentistUnavailableBlock[]
   dateBlocks       DentistDateBlock[]
@@ -204,7 +223,7 @@ model Dentist {
   consultations     Consultation[]
   appointmentPayments AppointmentPayment[]
   notifications     DentistNotification[]
-  salesReports      SalesReport[]
+  issuedDocuments   IssuedDocument[]
 }
 
 /// One-time dentist blocks for a specific date/time range (local time as entered; stored as timestamp).
@@ -275,9 +294,10 @@ model Appointment {
   dentist     Dentist           @relation(fields: [dentistId], references: [id], onDelete: Cascade)
   startAt     DateTime
   endAt       DateTime
-  status      AppointmentStatus @default(PENDING)
-  notes       String?           @db.Text
-  createdAt   DateTime          @default(now())
+  status        AppointmentStatus @default(PENDING)
+  notes         String?           @db.Text
+  reminderSent  Boolean           @default(false)
+  createdAt     DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   payment     AppointmentPayment?
   consultations Consultation[]

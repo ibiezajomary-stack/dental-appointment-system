@@ -1,49 +1,98 @@
 import { config } from "./config.js";
 
-export const isSmsConfigured = (): boolean =>
-  Boolean(config.itexmoEmail && config.itexmoPassword && config.itexmoApiCode);
+export type SmsResult = { ok: true } | { ok: false; error: string };
 
-export function normalizePhoneNumber(phone: string): string {
-  const value = phone.trim().replace(/[\s().-]/g, "");
-  if (value.startsWith("09") && value.length === 11) return `+63${value.slice(1)}`;
-  if (value.startsWith("63") && value.length === 12) return `+${value}`;
-  if (value.startsWith("+") && /^\+\d{8,15}$/.test(value)) return value;
-  throw new Error("INVALID_PHONE_NUMBER");
-}
-
-export async function sendSms(to: string, body: string): Promise<void> {
-  if (!isSmsConfigured()) {
-    throw new Error("SMS_NOT_CONFIGURED");
+async function sendViaTwilio(to: string, body: string): Promise<SmsResult> {
+  const { accountSid, authToken, fromNumber } = config.sms.twilio;
+  if (!accountSid || !authToken || !fromNumber) {
+    return { ok: false, error: "Twilio credentials not configured" };
   }
 
-  const response = await fetch("https://api.itexmo.com/api/broadcast", {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+  const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+  const params = new URLSearchParams({ To: to, From: fromNumber, Body: body });
+
+  const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      Email: config.itexmoEmail!,
-      Password: config.itexmoPassword!,
-      ApiCode: config.itexmoApiCode!,
-      Message: body,
-      Recipient: normalizePhoneNumber(to),
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return { ok: false, error: `Twilio error ${res.status}: ${text.slice(0, 200)}` };
+  }
+  return { ok: true };
+}
+
+async function sendViaSemaphore(to: string, body: string): Promise<SmsResult> {
+  const { apiKey, senderName } = config.sms.semaphore;
+  if (!apiKey) {
+    return { ok: false, error: "Semaphore API key not configured" };
+  }
+
+  const res = await fetch("https://api.semaphore.co/api/v4/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      apikey: apiKey,
+      number: to.replace(/^\+/, ""),
+      message: body,
+      sendername: senderName || "DENTAL",
     }),
   });
 
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`SMS_PROVIDER_ERROR_${response.status}: ${details.slice(0, 300)}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return { ok: false, error: `Semaphore error ${res.status}: ${text.slice(0, 200)}` };
+  }
+  return { ok: true };
+}
+
+/** Normalize Philippine mobile numbers to E.164 (+63...) for Twilio. */
+export function normalizePhone(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("09")) return `+63${digits.slice(1)}`;
+  if (digits.length === 10 && digits.startsWith("9")) return `+63${digits}`;
+  if (digits.length === 12 && digits.startsWith("63")) return `+${digits}`;
+  if (raw.startsWith("+") && digits.length >= 10) return `+${digits}`;
+  return null;
+}
+
+export async function sendSms(to: string, body: string): Promise<SmsResult> {
+  if (!config.sms.enabled) {
+    if (config.nodeEnv === "development") {
+      console.log(`[sms:dev] Would send to ${to}: ${body}`);
+      return { ok: true };
+    }
+    return { ok: false, error: "SMS provider not configured" };
   }
 
-  const result = (await response.text()).trim();
-  let successful = !result || result === "0" || /^success$/i.test(result);
-  if (!successful && result.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(result) as { code?: number | string; status?: string };
-      successful = parsed.code === 0 || /^success$/i.test(parsed.status ?? "");
-    } catch {
-      successful = false;
-    }
+  const normalized = normalizePhone(to);
+  if (!normalized) {
+    return { ok: false, error: `Invalid phone number: ${to}` };
   }
-  if (!successful) {
-    throw new Error(`SMS_PROVIDER_ERROR: ${result.slice(0, 300)}`);
+
+  if (config.sms.provider === "semaphore") {
+    return sendViaSemaphore(normalized, body);
   }
+  return sendViaTwilio(normalized, body);
+}
+
+export function buildReminderMessage(params: {
+  patientName: string;
+  dentistName: string;
+  date: string;
+  time: string;
+  clinicAddress: string;
+  clinicPhone: string;
+}): string {
+  return (
+    `Hello ${params.patientName}, this is a reminder for your dental appointment with ${params.dentistName} ` +
+    `on ${params.date} at ${params.time} at ${params.clinicAddress}. ` +
+    `Reply or call ${params.clinicPhone} if you need to reschedule.`
+  );
 }

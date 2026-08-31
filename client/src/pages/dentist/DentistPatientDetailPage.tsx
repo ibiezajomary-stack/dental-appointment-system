@@ -16,7 +16,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { api, getApiBase, getToken } from "../../lib/api";
+import { api, downloadPdf, getApiBase, getToken } from "../../lib/api";
 import { DentistOdontogramPanel } from "../../modules/dentist";
 
 const MH_KEYS = [
@@ -95,6 +95,17 @@ export function DentistPatientDetailPage() {
   const [historySearch, setHistorySearch] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [rxOpen, setRxOpen] = useState(false);
+  const [certOpen, setCertOpen] = useState(false);
+  const [rxDiagnosis, setRxDiagnosis] = useState("");
+  const [rxMeds, setRxMeds] = useState("");
+  const [rxNotes, setRxNotes] = useState("");
+  const [rxPlan, setRxPlan] = useState("");
+  const [certTreatment, setCertTreatment] = useState("");
+  const [certRestDays, setCertRestDays] = useState("one (1) day");
+  const [certStartDate, setCertStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [certEndDate, setCertEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [certRequester, setCertRequester] = useState("");
 
   const [address, setAddress] = useState("");
   const [referredBy, setReferredBy] = useState("");
@@ -137,15 +148,89 @@ export function DentistPatientDetailPage() {
   }
 
   async function openPdf(path: string) {
-    const token = getToken();
-    const res = await fetch(`${getApiBase()}${path}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
-    if (!res.ok) throw new Error(`PDF failed (${res.status})`);
-    const blob = await res.blob();
-    const objUrl = URL.createObjectURL(blob);
-    window.open(objUrl, "_blank", "noopener,noreferrer");
-    setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+    try {
+      await downloadPdf(path, false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "PDF failed");
+    }
+  }
+
+  async function savePrescription() {
+    if (!id) return;
+    if (!rxMeds.trim()) {
+      setError("Prescribed medication is required.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/patients/${encodeURIComponent(id)}/clinical-notes`, {
+        method: "POST",
+        body: JSON.stringify({
+          diagnosis: rxDiagnosis.trim() || undefined,
+          prescribedMedication: rxMeds.trim(),
+          notes: rxNotes.trim() || undefined,
+          treatmentPlan: rxPlan.trim() || undefined,
+        }),
+      });
+      setRxOpen(false);
+      setSaveMsg("Prescription saved. You can print or the patient can download it from My documents.");
+      setRxDiagnosis("");
+      setRxMeds("");
+      setRxNotes("");
+      setRxPlan("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save prescription");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function issueCertificate() {
+    if (!id || !dossier) return;
+    if (!certTreatment.trim()) {
+      setError("Treatment / procedure details are required.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const token = getToken();
+      const res = await fetch(`${getApiBase()}/api/print/patients/${encodeURIComponent(id)}/dental-certificate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          treatmentDetails: certTreatment.trim(),
+          restDays: certRestDays.trim(),
+          startDate: certStartDate,
+          endDate: certEndDate,
+          requesterName: certRequester.trim() || `${dossier.firstName} ${dossier.lastName}`,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data.error === "string" ? data.error : `Request failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      window.open(objUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+      setCertOpen(false);
+      setSaveMsg("Dental certificate issued. The patient can download it from My documents.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to issue certificate");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openCertificateDialog() {
+    if (!dossier) return;
+    setCertRequester(`${dossier.firstName} ${dossier.lastName}`);
+    setCertOpen(true);
   }
 
   const load = useCallback(async () => {
@@ -292,11 +377,14 @@ export function DentistPatientDetailPage() {
           ← Patients
         </Button>
         <Box sx={{ flexGrow: 1 }} />
+        <Button variant="outlined" sx={{ textTransform: "none" }} onClick={() => setRxOpen(true)}>
+          Add prescription
+        </Button>
         <Button variant="outlined" sx={{ textTransform: "none" }} onClick={() => void openPdf(`/api/print/patients/${id}/prescription`)}>
           Print prescription (PDF)
         </Button>
-        <Button variant="outlined" sx={{ textTransform: "none" }} onClick={() => void openPdf(`/api/print/patients/${id}/dental-certificate`)}>
-          Print dental certificate (PDF)
+        <Button variant="outlined" sx={{ textTransform: "none" }} onClick={openCertificateDialog}>
+          Issue dental certificate
         </Button>
         <Button variant="outlined" sx={{ textTransform: "none" }} onClick={() => void openPdf(`/api/print/patients/${id}/history`)}>
           Print history (PDF)
@@ -650,6 +738,114 @@ export function DentistPatientDetailPage() {
       <Button variant="contained" size="large" disabled={busy} onClick={() => void saveReport()}>
         Save consultation report &amp; patient details
       </Button>
+
+      <Dialog open={rxOpen} onClose={() => !busy && setRxOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Add prescription</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Diagnosis"
+            fullWidth
+            margin="normal"
+            value={rxDiagnosis}
+            onChange={(e) => setRxDiagnosis(e.target.value)}
+          />
+          <TextField
+            label="Prescribed medication"
+            fullWidth
+            margin="normal"
+            required
+            multiline
+            minRows={3}
+            value={rxMeds}
+            onChange={(e) => setRxMeds(e.target.value)}
+            placeholder="e.g. Amoxicillin 500mg — 1 capsule 3x daily for 7 days"
+          />
+          <TextField
+            label="Notes"
+            fullWidth
+            margin="normal"
+            multiline
+            minRows={2}
+            value={rxNotes}
+            onChange={(e) => setRxNotes(e.target.value)}
+          />
+          <TextField
+            label="Treatment plan"
+            fullWidth
+            margin="normal"
+            multiline
+            minRows={2}
+            value={rxPlan}
+            onChange={(e) => setRxPlan(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRxOpen(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={() => void savePrescription()} disabled={busy}>
+            {busy ? "Saving…" : "Save prescription"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={certOpen} onClose={() => !busy && setCertOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Issue dental certificate</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Treatment / procedure details"
+            fullWidth
+            margin="normal"
+            required
+            multiline
+            minRows={2}
+            value={certTreatment}
+            onChange={(e) => setCertTreatment(e.target.value)}
+            placeholder="e.g. extraction of tooth #36 and minor oral surgery"
+          />
+          <TextField
+            label="Rest period"
+            fullWidth
+            margin="normal"
+            value={certRestDays}
+            onChange={(e) => setCertRestDays(e.target.value)}
+            placeholder="e.g. three (3) days"
+          />
+          <TextField
+            label="Rest start date"
+            type="date"
+            fullWidth
+            margin="normal"
+            value={certStartDate}
+            onChange={(e) => setCertStartDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Rest end date"
+            type="date"
+            fullWidth
+            margin="normal"
+            value={certEndDate}
+            onChange={(e) => setCertEndDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Requested by (Mr./Mrs.)"
+            fullWidth
+            margin="normal"
+            value={certRequester}
+            onChange={(e) => setCertRequester(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCertOpen(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={() => void issueCertificate()} disabled={busy}>
+            {busy ? "Issuing…" : "Issue & print certificate"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={deleteOpen} onClose={() => (!deleteBusy ? setDeleteOpen(false) : null)}>
         <DialogTitle>Delete patient record?</DialogTitle>

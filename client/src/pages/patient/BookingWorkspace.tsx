@@ -29,10 +29,15 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import dayjs, { type Dayjs } from "dayjs";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api, getApiBase, getToken } from "../../lib/api";
+import { NeedHelpButton } from "../../components/NeedHelpButton";
 
 type Dentist = {
   id: string;
+  displayName?: string | null;
+  phone?: string | null;
   specialty?: string | null;
+  bio?: string | null;
+  clinicAddress?: string | null;
   user: { email: string };
 };
 
@@ -63,6 +68,22 @@ type DentistGcash = {
   qrUrl: string;
   updatedAt: string;
 };
+
+type ClinicSupport = {
+  clinicPhone: string;
+  clinicEmail?: string | null;
+  clinicName: string;
+  clinicAddress?: string | null;
+  dentistName?: string | null;
+};
+
+function phoneToTel(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("09")) return `+63${digits.slice(1)}`;
+  if (digits.length === 10 && digits.startsWith("9")) return `+63${digits}`;
+  if (digits.length === 12 && digits.startsWith("63")) return `+${digits}`;
+  return raw.replace(/\s/g, "");
+}
 
 const DENTAL_SERVICES: { id: string; label: string; price: string }[] = [
   { id: "cleaning", label: "Dental Cleaning", price: "P800 - 1.5k" },
@@ -186,14 +207,21 @@ export function BookingWorkspace({
   const [prefetchBusy, setPrefetchBusy] = useState(false);
   const [sentOpen, setSentOpen] = useState(false);
   const [patientMe, setPatientMe] = useState<PatientMe | null>(null);
+  const [dentists, setDentists] = useState<Dentist[]>([]);
+  const [clinicSupport, setClinicSupport] = useState<ClinicSupport | null>(null);
 
   useEffect(() => {
     void api<Dentist[]>("/api/dentists")
       .then((d) => {
+        setDentists(d);
         if (d[0]) setDentistId(d[0].id);
         else setError("No dentist is configured yet.");
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load dentists"));
+
+    void api<ClinicSupport>("/api/public/support")
+      .then(setClinicSupport)
+      .catch(() => {});
   }, []);
 
   // Single dentist system: dentistId is auto-selected from the first dentist record.
@@ -779,26 +807,94 @@ export function BookingWorkspace({
         </Paper>
 
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2.5,
-              borderRadius: 3,
-              bgcolor: "primary.main",
-              color: "primary.contrastText",
-            }}
-          >
-            <Typography sx={{ fontSize: "1.75rem", mb: 1 }}>
-              🦷
-            </Typography>
-            <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1 }}>
-              Need help?
-            </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.95 }}>
-              You can use our Virtual Consultation if you can&apos;t make it to the clinic. Just select &apos;Virtual&apos; in
-              the form!
-            </Typography>
-          </Paper>
+          {(() => {
+            const selectedDentist = dentists.find((d) => d.id === dentistId) ?? dentists[0];
+            const clinicName =
+              selectedDentist?.displayName?.trim() ||
+              clinicSupport?.dentistName?.trim() ||
+              clinicSupport?.clinicName ||
+              "Dental Clinic";
+            const clinicPhone =
+              selectedDentist?.phone?.trim() || clinicSupport?.clinicPhone || null;
+            const clinicAddress =
+              selectedDentist?.clinicAddress?.trim() || clinicSupport?.clinicAddress || null;
+            const clinicEmail =
+              selectedDentist?.user.email || clinicSupport?.clinicEmail || null;
+
+            return (
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2.5,
+                  borderRadius: 3,
+                  bgcolor: "primary.main",
+                  color: "primary.contrastText",
+                }}
+              >
+                <Typography sx={{ fontSize: "1.75rem", mb: 1 }}>
+                  🦷
+                </Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1 }}>
+                  Need help?
+                </Typography>
+
+                <Box sx={{ mb: 2, pb: 2, borderBottom: "1px solid rgba(255,255,255,0.25)" }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                    {clinicName}
+                  </Typography>
+                  {clinicPhone ? (
+                    <Typography
+                      component="a"
+                      href={`tel:${phoneToTel(clinicPhone)}`}
+                      variant="body2"
+                      sx={{
+                        display: "block",
+                        opacity: 0.95,
+                        mb: 0.5,
+                        color: "inherit",
+                        textDecoration: "none",
+                        "&:hover": { textDecoration: "underline" },
+                      }}
+                    >
+                      📞 {clinicPhone}
+                    </Typography>
+                  ) : (
+                    <Typography variant="body2" sx={{ opacity: 0.85, mb: 0.5, fontStyle: "italic" }}>
+                      Contact number not set
+                    </Typography>
+                  )}
+                  {clinicEmail ? (
+                    <Typography
+                      component="a"
+                      href={`mailto:${clinicEmail}`}
+                      variant="body2"
+                      sx={{
+                        display: "block",
+                        opacity: 0.95,
+                        mb: 0.5,
+                        color: "inherit",
+                        textDecoration: "none",
+                        "&:hover": { textDecoration: "underline" },
+                      }}
+                    >
+                      ✉️ {clinicEmail}
+                    </Typography>
+                  ) : null}
+                  {clinicAddress ? (
+                    <Typography variant="body2" sx={{ opacity: 0.95 }}>
+                      📍 {clinicAddress}
+                    </Typography>
+                  ) : null}
+                </Box>
+
+                <Typography variant="body2" sx={{ opacity: 0.95, mb: 1.5 }}>
+                  You can use our Virtual Consultation if you can&apos;t make it to the clinic. Just select &apos;Virtual&apos; in
+                  the form!
+                </Typography>
+                <NeedHelpButton variant="outlined" color="inherit" size="small" sx={{ color: "inherit", borderColor: "rgba(255,255,255,0.5)" }} />
+              </Paper>
+            );
+          })()}
         </Box>
       </Box>
 

@@ -159,6 +159,7 @@ const dentistProfilePatch = z.object({
   phone: z.string().optional().nullable(),
   licenseNumber: z.string().optional().nullable(),
   specialty: z.string().optional().nullable(),
+  clinicAddress: z.string().optional().nullable(),
   bio: z.string().optional().nullable(),
 });
 
@@ -202,6 +203,7 @@ dentistsRouter.patch(
           phone: patch.phone ?? undefined,
           licenseNumber: patch.licenseNumber ?? undefined,
           specialty: patch.specialty ?? undefined,
+          clinicAddress: patch.clinicAddress ?? undefined,
           bio: patch.bio ?? undefined,
         },
         include: { user: { select: { email: true } } },

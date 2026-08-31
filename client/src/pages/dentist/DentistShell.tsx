@@ -33,6 +33,7 @@ import { DentistPatientsPage } from "./DentistPatientsPage";
 import { DentistPatientDetailPage } from "./DentistPatientDetailPage";
 import { DentistNotificationsPage } from "./DentistNotificationsPage";
 import { VideoConsultation } from "../../components/VideoConsultation";
+import { NeedHelpButton } from "../../components/NeedHelpButton";
 
 const NAV = [
   { label: "Home", to: "/dentist" },
@@ -174,6 +175,7 @@ export function DentistShell() {
               ))}
             </Box>
             <Box sx={{ flexGrow: { xs: 1, md: 0 } }} />
+            <NeedHelpButton sx={{ display: { xs: "none", md: "inline-flex" } }} />
             <Button
               variant="contained"
               color="primary"
@@ -214,7 +216,8 @@ export function DentistShell() {
             ))}
           </List>
           <Divider sx={{ mt: "auto" }} />
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+            <NeedHelpButton variant="outlined" size="medium" />
             <Button variant="contained" fullWidth onClick={() => logout()}>
               Logout
             </Button>

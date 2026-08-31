@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma, Role, ToothSurfaceStateKind } from "@prisma/client";
+import { Prisma, Role, ToothSurfaceStateKind, ConsultationStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
@@ -408,6 +408,78 @@ patientsRouter.get(
         return;
       }
       res.json(patient);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+const clinicalNoteSchema = z.object({
+  diagnosis: z.string().optional(),
+  prescribedMedication: z.string().optional(),
+  notes: z.string().optional(),
+  treatmentPlan: z.string().optional(),
+});
+
+patientsRouter.post(
+  "/:id/clinical-notes",
+  requireAuth,
+  requireRole(Role.DENTIST, Role.ADMIN),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const patientId = patientIdParam(req);
+      const body = clinicalNoteSchema.parse(req.body);
+
+      const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+      if (!patient) {
+        res.status(404).json({ error: "Patient not found" });
+        return;
+      }
+
+      let dentistId: string | undefined;
+      if (req.role === Role.DENTIST) {
+        const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+        if (!dentist) {
+          res.status(403).json({ error: "Dentist profile not found" });
+          return;
+        }
+        dentistId = dentist.id;
+      } else {
+        const dentist = await prisma.dentist.findFirst({ orderBy: { id: "asc" } });
+        if (!dentist) {
+          res.status(400).json({ error: "No dentist configured" });
+          return;
+        }
+        dentistId = dentist.id;
+      }
+
+      let consultation = await prisma.consultation.findFirst({
+        where: { patientId, dentistId },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (!consultation) {
+        consultation = await prisma.consultation.create({
+          data: {
+            patientId,
+            dentistId,
+            status: ConsultationStatus.COMPLETED,
+          },
+        });
+      }
+
+      const note = await prisma.consultationNote.create({
+        data: {
+          consultationId: consultation.id,
+          createdById: req.userId!,
+          diagnosis: body.diagnosis,
+          prescribedMedication: body.prescribedMedication,
+          notes: body.notes,
+          treatmentPlan: body.treatmentPlan,
+        },
+      });
+
+      res.status(201).json(note);
     } catch (e) {
       next(e);
     }

@@ -14,6 +14,30 @@ export function setToken(token: string | null): void {
   else localStorage.removeItem("token");
 }
 
+export async function downloadPdf(path: string, download = false): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${getApiBase()}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const msg = typeof data.error === "string" ? data.error : `Download failed (${res.status})`;
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const filename = path.split("/").pop()?.split("?")[0] ?? "document.pdf";
+  if (download) {
+    const a = document.createElement("a");
+    a.href = objUrl;
+    a.download = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+    a.click();
+  } else {
+    window.open(objUrl, "_blank", "noopener,noreferrer");
+  }
+  setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+}
+
 export async function api<T = unknown>(
   path: string,
   options: RequestInit = {},

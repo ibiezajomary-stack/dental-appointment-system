@@ -29,14 +29,17 @@ import { ConsultationsPage } from "./ConsultationsPage";
 import { PatientHome } from "./PatientHome";
 import { PatientNotificationsPage } from "./PatientNotificationsPage";
 import { PatientServicesPage } from "./PatientServicesPage";
+import { PatientDocumentsPage } from "./PatientDocumentsPage";
 import { ProfilePage } from "./ProfilePage";
 import { ToothChartPage } from "./ToothChartPage";
 import { VideoPage } from "./VideoPage";
+import { NeedHelpButton } from "../../components/NeedHelpButton";
 
 const NAV = [
   { label: "Home", to: "/patient" },
   { label: "Appointments", to: "/patient/book" },
   { label: "Virtual consultation", to: "/patient/consultations" },
+  { label: "My documents", to: "/patient/documents" },
   { label: "Tooth chart", to: "/patient/chart" },
   { label: "Services", to: "/patient/services" },
   { label: "Notification", to: "/patient/notifications" },
@@ -190,6 +193,7 @@ export function PatientShell() {
               ))}
             </Box>
             <Box sx={{ flexGrow: { xs: 1, md: 0 } }} />
+            <NeedHelpButton sx={{ display: { xs: "none", md: "inline-flex" } }} />
             <Button
               variant="contained"
               color="primary"
@@ -230,7 +234,8 @@ export function PatientShell() {
             ))}
           </List>
           <Divider sx={{ mt: "auto" }} />
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+            <NeedHelpButton variant="outlined" size="medium" />
             <Button variant="contained" fullWidth onClick={() => logout()}>
               Logout
             </Button>
@@ -289,6 +294,14 @@ export function PatientShell() {
               element={
                 <ShellContent>
                   <ConsultationsPage />
+                </ShellContent>
+              }
+            />
+            <Route
+              path="documents"
+              element={
+                <ShellContent>
+                  <PatientDocumentsPage />
                 </ShellContent>
               }
             />

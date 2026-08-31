@@ -18,6 +18,7 @@ import {
 } from "@mui/material";
 import { useAuth } from "../auth/AuthContext";
 import { api, setToken } from "../lib/api";
+import { NeedHelpButton } from "../components/NeedHelpButton";
 
 export function RegisterPage() {
   const { refresh, user } = useAuth();
@@ -111,9 +112,18 @@ export function RegisterPage() {
   return (
     <Container maxWidth="sm" sx={{ py: { xs: 4, sm: 8 } }}>
       <Paper elevation={4} sx={{ p: { xs: 2.5, sm: 4 }, borderRadius: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 800, mb: 3 }}>
-          Create an Account
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2, mb: 3 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800 }}>
+            Create an Account
+          </Typography>
+          <NeedHelpButton
+            variant="outlined"
+            size="medium"
+            showCallClinic
+            description="Having trouble creating your account, uploading your ID, or completing registration? Call the clinic for assistance."
+            sx={{ flexShrink: 0 }}
+          />
+        </Box>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}

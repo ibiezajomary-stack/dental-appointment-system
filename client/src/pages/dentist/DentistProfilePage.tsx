@@ -8,6 +8,7 @@ type Profile = {
   phone: string | null;
   licenseNumber: string | null;
   specialty: string | null;
+  clinicAddress: string | null;
   bio: string | null;
   user: { email: string };
 };
@@ -19,6 +20,7 @@ export function DentistProfilePage() {
     phone: "",
     licenseNumber: "",
     specialty: "",
+    clinicAddress: "",
     bio: "",
   });
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +37,7 @@ export function DentistProfilePage() {
         phone: p.phone ?? "",
         licenseNumber: p.licenseNumber ?? "",
         specialty: p.specialty ?? "",
+        clinicAddress: p.clinicAddress ?? "",
         bio: p.bio ?? "",
       });
     } catch (e) {
@@ -58,6 +61,7 @@ export function DentistProfilePage() {
           phone: form.phone.trim() || null,
           licenseNumber: form.licenseNumber.trim() || null,
           specialty: form.specialty.trim() || null,
+          clinicAddress: form.clinicAddress.trim() || null,
           bio: form.bio.trim() || null,
         }),
       });
@@ -114,6 +118,14 @@ export function DentistProfilePage() {
           value={form.specialty}
           onChange={(e) => setForm({ ...form, specialty: e.target.value })}
           placeholder="General Dentistry"
+        />
+        <TextField
+          label="Clinic Address"
+          name="clinic_address"
+          value={form.clinicAddress}
+          onChange={(e) => setForm({ ...form, clinicAddress: e.target.value })}
+          placeholder="123 Main St, Calinog, Iloilo"
+          sx={{ gridColumn: { sm: "1 / -1" } }}
         />
       </Box>
 

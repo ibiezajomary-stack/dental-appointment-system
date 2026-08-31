@@ -4,7 +4,6 @@ import express from "express";
 import cors from "cors";
 import cron from "node-cron";
 import { config } from "./lib/config.js";
-import { prisma } from "./lib/prisma.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { authRouter } from "./routes/auth.js";
 import { dentistsRouter } from "./routes/dentists.js";
@@ -21,6 +20,8 @@ import { notificationsRouter } from "./routes/notifications.js";
 import { dentistNotificationsRouter } from "./routes/dentistNotifications.js";
 import { adminNotificationsRouter } from "./routes/adminNotifications.js";
 import { printRouter } from "./routes/print.js";
+import { publicSupportRouter } from "./routes/publicSupport.js";
+import { sendAppointmentReminders } from "./jobs/appointmentReminders.js";
 
 const app = express();
 
@@ -66,6 +67,7 @@ app.use("/api/notifications", notificationsRouter);
 app.use("/api/dentist-notifications", dentistNotificationsRouter);
 app.use("/api/admin-notifications", adminNotificationsRouter);
 app.use("/api/print", printRouter);
+app.use("/api/public/support", publicSupportRouter);
 
 app.use(errorHandler);
 
@@ -73,18 +75,11 @@ async function ensureUploadDir(): Promise<void> {
   await fs.mkdir(path.resolve(config.uploadDir), { recursive: true });
 }
 
-/** Hourly: placeholder for email/SMS reminders (wire SMTP or provider later). */
-cron.schedule("0 * * * *", async () => {
-  const soon = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const count = await prisma.appointment.count({
-    where: {
-      status: { in: ["PENDING", "CONFIRMED"] },
-      startAt: { lte: soon, gte: new Date() },
-    },
+/** Hourly: send SMS reminders for confirmed appointments ~24 hours ahead. */
+cron.schedule("0 * * * *", () => {
+  void sendAppointmentReminders().catch((err) => {
+    console.error("[reminders] Cron job failed:", err);
   });
-  if (count > 0 && config.nodeEnv === "development") {
-    console.log(`[reminders] ${count} appointment(s) in the next 24h (email not configured)`);
-  }
 });
 
 const start = async (): Promise<void> => {

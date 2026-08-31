@@ -16,6 +16,10 @@ export function requireAuth(req: AuthedRequest, res: Response, next: NextFunctio
   const token = header.slice(7);
   try {
     const payload = verifyToken(token);
+    if (!payload.sub) {
+      res.status(401).json({ error: "Invalid token payload" });
+      return;
+    }
     req.userId = payload.sub;
     req.role = payload.role;
     next();

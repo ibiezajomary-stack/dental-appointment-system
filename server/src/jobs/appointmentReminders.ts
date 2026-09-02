@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { config } from "../lib/config.js";
+import { getClinicContactInfo } from "../lib/clinicSettings.js";
 import { buildReminderMessage, sendSms } from "../lib/sms.js";
 
 export async function sendAppointmentReminders(): Promise<void> {
@@ -7,26 +8,34 @@ export async function sendAppointmentReminders(): Promise<void> {
   const windowStart = new Date(now + 23 * 60 * 60 * 1000);
   const windowEnd = new Date(now + 25 * 60 * 60 * 1000);
 
-  const appointments = await prisma.appointment.findMany({
-    where: {
-      status: "CONFIRMED",
-      reminderSent: false,
-      startAt: { gte: windowStart, lte: windowEnd },
-    },
-    include: {
-      patient: { select: { firstName: true, lastName: true, phone: true } },
-      dentist: {
-        select: {
-          displayName: true,
-          phone: true,
-          clinicAddress: true,
-          user: { select: { email: true } },
+  const [appointments, contact] = await Promise.all([
+    prisma.appointment.findMany({
+      where: {
+        status: "CONFIRMED",
+        reminderSent: false,
+        startAt: { gte: windowStart, lte: windowEnd },
+      },
+      include: {
+        patient: { select: { firstName: true, lastName: true, phone: true } },
+        dentist: {
+          select: {
+            displayName: true,
+            clinicAddress: true,
+            user: { select: { email: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    getClinicContactInfo(),
+  ]);
 
   if (appointments.length === 0) return;
+
+  const clinicPhone = contact.clinicPhone ?? contact.supportPhone;
+  if (!clinicPhone) {
+    console.warn("[reminders] Skipping: clinic contact phone not configured in database");
+    return;
+  }
 
   for (const appt of appointments) {
     const phone = appt.patient.phone?.trim();
@@ -46,7 +55,6 @@ export async function sendAppointmentReminders(): Promise<void> {
     });
     const time = startLocal.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
     const clinicAddress = appt.dentist.clinicAddress?.trim() || config.clinicName;
-    const clinicPhone = appt.dentist.phone?.trim() || config.supportPhone;
 
     const message = buildReminderMessage({
       patientName,

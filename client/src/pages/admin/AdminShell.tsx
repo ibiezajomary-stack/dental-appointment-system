@@ -18,12 +18,14 @@ import {
 } from "@mui/material";
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../lib/api";
+import { AdminClinicContactPage } from "./AdminClinicContactPage";
 import { AdminDashboardPage } from "./AdminDashboardPage";
 import { AdminNotificationsPage } from "./AdminNotificationsPage";
 import { AdminTimeManagementPage } from "./AdminTimeManagementPage";
 
 const NAV = [
   { label: "Overview", to: "/admin" },
+  { label: "Clinic contact", to: "/admin/clinic-contact" },
   { label: "Time management", to: "/admin/time-management" },
   { label: "Notifications", to: "/admin/notifications" },
 ] as const;
@@ -179,6 +181,7 @@ export function AdminShell() {
       <Container maxWidth="lg" sx={{ py: 4, px: { xs: 2, sm: 3 } }}>
         <Routes>
           <Route index element={<AdminDashboardPage />} />
+          <Route path="clinic-contact" element={<AdminClinicContactPage />} />
           <Route path="time-management" element={<AdminTimeManagementPage />} />
           <Route path="notifications" element={<AdminNotificationsPage />} />
           <Route path="*" element={<Typography sx={{ p: 2 }}>Page not found</Typography>} />

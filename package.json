@@ -8,9 +8,14 @@
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run db:generate -w server && npm run build -w server && npm run build -w client",
+    "start": "npm run start -w server",
     "db:generate": "npm run db:generate -w server",
     "db:migrate": "npm run db:migrate -w server",
+    "db:migrate:deploy": "npm run db:migrate:deploy -w server",
     "db:seed": "npm run db:seed -w server"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

@@ -97,6 +97,14 @@ model ClinicTimeBlock {
   @@index([endAt])
 }
 
+/// Singleton clinic contact details (row id is always "default").
+model ClinicSettings {
+  id           String   @id @default("default")
+  clinicPhone  String?
+  supportPhone String?
+  updatedAt    DateTime @updatedAt
+}
+
 enum IssuedDocumentType {
   DENTAL_CERTIFICATE
 }
@@ -224,6 +232,7 @@ model Dentist {
   appointmentPayments AppointmentPayment[]
   notifications     DentistNotification[]
   issuedDocuments   IssuedDocument[]
+  salesReports      SalesReport[]
 }
 
 /// One-time dentist blocks for a specific date/time range (local time as entered; stored as timestamp).

@@ -70,7 +70,8 @@ type DentistGcash = {
 };
 
 type ClinicSupport = {
-  clinicPhone: string;
+  clinicPhone: string | null;
+  supportPhone?: string | null;
   clinicEmail?: string | null;
   clinicName: string;
   clinicAddress?: string | null;
@@ -815,7 +816,7 @@ export function BookingWorkspace({
               clinicSupport?.clinicName ||
               "Dental Clinic";
             const clinicPhone =
-              selectedDentist?.phone?.trim() || clinicSupport?.clinicPhone || null;
+              clinicSupport?.clinicPhone?.trim() || clinicSupport?.supportPhone?.trim() || null;
             const clinicAddress =
               selectedDentist?.clinicAddress?.trim() || clinicSupport?.clinicAddress || null;
             const clinicEmail =

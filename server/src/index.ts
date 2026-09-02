@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import cron from "node-cron";
@@ -85,6 +86,20 @@ app.use("/api/admin-notifications", adminNotificationsRouter);
 app.use("/api/print", printRouter);
 app.use("/api/public/support", publicSupportRouter);
 
+if (config.nodeEnv === "production") {
+  const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client/dist");
+  app.use(express.static(clientDist));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) {
+      next();
+      return;
+    }
+    res.sendFile(path.join(clientDist, "index.html"), (err) => {
+      if (err) next(err);
+    });
+  });
+}
+
 app.use(errorHandler);
 
 async function ensureUploadDir(): Promise<void> {
@@ -96,10 +111,6 @@ cron.schedule("0 * * * *", () => {
   void sendAppointmentReminders().catch((err) => {
     console.error("[reminders] Cron job failed:", err);
   });
-});
-
-cron.schedule("0 * * * *", async () => {
-  await sendAppointmentReminders();
 });
 
 const start = async (): Promise<void> => {

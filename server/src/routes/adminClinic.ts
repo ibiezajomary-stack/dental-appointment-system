@@ -13,6 +13,63 @@ const createBlockSchema = z.object({
   reason: z.string().optional(),
 });
 
+const updateClinicSettingsSchema = z.object({
+  clinicPhone: z.string().trim().max(32).optional().nullable(),
+  supportPhone: z.string().trim().max(32).optional().nullable(),
+});
+
+adminClinicRouter.get(
+  "/clinic-settings",
+  requireAuth,
+  requireRole(Role.ADMIN),
+  async (_req: AuthedRequest, res, next) => {
+    try {
+      const row = await prisma.clinicSettings.upsert({
+        where: { id: "default" },
+        update: {},
+        create: { id: "default" },
+      });
+      res.json({
+        clinicPhone: row.clinicPhone,
+        supportPhone: row.supportPhone,
+        updatedAt: row.updatedAt,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+adminClinicRouter.patch(
+  "/clinic-settings",
+  requireAuth,
+  requireRole(Role.ADMIN),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const body = updateClinicSettingsSchema.parse(req.body);
+      const row = await prisma.clinicSettings.upsert({
+        where: { id: "default" },
+        update: {
+          ...(body.clinicPhone !== undefined ? { clinicPhone: body.clinicPhone || null } : {}),
+          ...(body.supportPhone !== undefined ? { supportPhone: body.supportPhone || null } : {}),
+        },
+        create: {
+          id: "default",
+          clinicPhone: body.clinicPhone ?? null,
+          supportPhone: body.supportPhone ?? null,
+        },
+      });
+      res.json({
+        clinicPhone: row.clinicPhone,
+        supportPhone: row.supportPhone,
+        updatedAt: row.updatedAt,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 adminClinicRouter.get(
   "/clinic-time-blocks",
   requireAuth,

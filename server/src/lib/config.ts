@@ -5,13 +5,16 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   jwtSecret: process.env.JWT_SECRET ?? "dev-only-change-me",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
-  clientOrigin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
+  clientOrigin:
+    process.env.CLIENT_ORIGIN ??
+    process.env.RENDER_EXTERNAL_URL ??
+    "http://localhost:5173",
   uploadDir: process.env.UPLOAD_DIR ?? "./uploads",
   clinicName: process.env.CLINIC_NAME ?? "RHU Calinog",
-  supportPhone: process.env.SUPPORT_PHONE ?? "0917-000-0000",
   supportHours:
     process.env.SUPPORT_HOURS ??
     "Monday–Friday, 8:00 AM – 5:00 PM. For urgent registration or login issues, call during office hours.",
+  cronSecret: process.env.CRON_SECRET ?? "",
   sms: {
     enabled: Boolean(process.env.SMS_PROVIDER),
     provider: (process.env.SMS_PROVIDER ?? "twilio") as "twilio" | "semaphore",

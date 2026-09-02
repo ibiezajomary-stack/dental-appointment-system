@@ -10,6 +10,7 @@ import {
   isVirtualFromAppointmentNotes,
   isWithinDefaultBookingSegments,
 } from "../lib/slots.js";
+import { sendAppointmentConfirmedSms } from "../lib/appointmentSms.js";
 
 export const appointmentsRouter = Router();
 
@@ -186,7 +187,17 @@ appointmentsRouter.patch(
           ...(body.status !== undefined && { status: body.status }),
           ...(body.notes !== undefined && { notes: body.notes }),
         },
-        include: { patient: true, dentist: { include: { user: { select: { email: true } } } } },
+        include: {
+          patient: true,
+          dentist: {
+            select: {
+              displayName: true,
+              phone: true,
+              clinicAddress: true,
+              user: { select: { email: true } },
+            },
+          },
+        },
       });
 
       if (body.status === AppointmentStatus.CONFIRMED && prevStatus !== AppointmentStatus.CONFIRMED) {
@@ -198,6 +209,9 @@ appointmentsRouter.patch(
             title: "Appointment accepted",
             message: `Your appointment on ${when} has been accepted/confirmed by the dentist.`,
           },
+        });
+        void sendAppointmentConfirmedSms(updated).catch((err) => {
+          console.error("[sms] Confirmation SMS error:", err);
         });
       }
 

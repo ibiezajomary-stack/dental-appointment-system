@@ -120,7 +120,7 @@ async function ensureUploadDir(): Promise<void> {
   await fsPromises.mkdir(path.resolve(config.uploadDir), { recursive: true });
 }
 
-/** Hourly: send SMS reminders for confirmed appointments ~24 hours ahead. */
+/** Hourly: remind patients with confirmed appointments starting within 24 hours. */
 cron.schedule("0 * * * *", () => {
   void sendAppointmentReminders().catch((err) => {
     console.error("[reminders] Cron job failed:", err);

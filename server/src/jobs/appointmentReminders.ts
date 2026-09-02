@@ -1,25 +1,33 @@
 import { prisma } from "../lib/prisma.js";
 import { config } from "../lib/config.js";
-import { getClinicContactInfo } from "../lib/clinicSettings.js";
+import { getClinicContactInfo, resolveClinicPhone } from "../lib/clinicSettings.js";
+import { formatAppointmentDateTime } from "../lib/appointmentSms.js";
 import { buildReminderMessage, sendSms } from "../lib/sms.js";
 
-export async function sendAppointmentReminders(): Promise<void> {
-  const now = Date.now();
-  const windowStart = new Date(now + 23 * 60 * 60 * 1000);
-  const windowEnd = new Date(now + 25 * 60 * 60 * 1000);
+const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+
+export async function sendAppointmentReminders(): Promise<{
+  checked: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+}> {
+  const now = new Date();
+  const within24Hours = new Date(now.getTime() + TWENTY_FOUR_HOURS_MS);
 
   const [appointments, contact] = await Promise.all([
     prisma.appointment.findMany({
       where: {
         status: "CONFIRMED",
         reminderSent: false,
-        startAt: { gte: windowStart, lte: windowEnd },
+        startAt: { gt: now, lte: within24Hours },
       },
       include: {
         patient: { select: { firstName: true, lastName: true, phone: true } },
         dentist: {
           select: {
             displayName: true,
+            phone: true,
             clinicAddress: true,
             user: { select: { email: true } },
           },
@@ -29,31 +37,22 @@ export async function sendAppointmentReminders(): Promise<void> {
     getClinicContactInfo(),
   ]);
 
-  if (appointments.length === 0) return;
-
-  const clinicPhone = contact.clinicPhone ?? contact.supportPhone;
-  if (!clinicPhone) {
-    console.warn("[reminders] Skipping: clinic contact phone not configured in database");
-    return;
-  }
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
 
   for (const appt of appointments) {
-    const phone = appt.patient.phone?.trim();
-    if (!phone) {
+    const patientPhone = appt.patient.phone?.trim();
+    if (!patientPhone) {
       console.warn(`[reminders] Skipping appointment ${appt.id}: patient has no phone`);
+      skipped += 1;
       continue;
     }
 
+    const clinicPhone = resolveClinicPhone(contact, appt.dentist.phone);
     const patientName = `${appt.patient.firstName} ${appt.patient.lastName}`.trim();
     const dentistName = appt.dentist.displayName ?? appt.dentist.user.email;
-    const startLocal = appt.startAt;
-    const date = startLocal.toLocaleDateString("en-PH", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-    const time = startLocal.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
+    const { date, time } = formatAppointmentDateTime(appt.startAt);
     const clinicAddress = appt.dentist.clinicAddress?.trim() || config.clinicName;
 
     const message = buildReminderMessage({
@@ -65,15 +64,19 @@ export async function sendAppointmentReminders(): Promise<void> {
       clinicPhone,
     });
 
-    const result = await sendSms(phone, message);
+    const result = await sendSms(patientPhone, message);
     if (result.ok) {
       await prisma.appointment.update({
         where: { id: appt.id },
         data: { reminderSent: true },
       });
-      console.log(`[reminders] Sent reminder for appointment ${appt.id} to ${phone}`);
+      sent += 1;
+      console.log(`[reminders] Sent reminder to patient ${patientPhone} for appointment ${appt.id}`);
     } else {
+      failed += 1;
       console.error(`[reminders] Failed for appointment ${appt.id}: ${result.error}`);
     }
   }
+
+  return { checked: appointments.length, sent, skipped, failed };
 }

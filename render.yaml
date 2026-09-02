@@ -29,11 +29,11 @@ services:
       - key: CLINIC_NAME
         value: RHU Calinog
       - key: SMS_PROVIDER
+        value: brevo
+      - key: BREVO_API_KEY
         sync: false
-      - key: SEMAPHORE_API_KEY
-        sync: false
-      - key: SEMAPHORE_SENDER_NAME
-        value: DENTAL
+      - key: BREVO_SMS_SENDER
+        value: iSmile
 
   # Optional: reliable SMS reminders while the web service is asleep on the free plan.
   # Uncomment after the web service is live, then set the URL to your app host.

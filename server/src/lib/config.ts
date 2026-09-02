@@ -17,7 +17,16 @@ export const config = {
   cronSecret: process.env.CRON_SECRET ?? "",
   sms: {
     enabled: Boolean(process.env.SMS_PROVIDER),
-    provider: (process.env.SMS_PROVIDER ?? "twilio") as "twilio" | "semaphore",
+    provider: (process.env.SMS_PROVIDER ?? "brevo") as "brevo" | "twilio" | "semaphore" | "telesign",
+    brevo: {
+      apiKey: process.env.BREVO_API_KEY ?? "",
+      sender: process.env.BREVO_SMS_SENDER ?? "iSmile",
+    },
+    telesign: {
+      customerId: process.env.TELESIGN_CUSTOMER_ID ?? "",
+      apiKey: process.env.TELESIGN_API_KEY ?? "",
+      messageType: process.env.TELESIGN_MESSAGE_TYPE ?? "ARN",
+    },
     twilio: {
       accountSid: process.env.TWILIO_ACCOUNT_SID ?? "",
       authToken: process.env.TWILIO_AUTH_TOKEN ?? "",

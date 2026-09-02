@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { generateSlotsForDay } from "../lib/slots.js";
+import { generateSlotsForDay, clinicDayUtcRange } from "../lib/slots.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { Role } from "@prisma/client";
@@ -26,7 +26,9 @@ dentistsRouter.get("/:id/slots", async (req, res, next) => {
   try {
     const { id } = req.params;
     const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(req.query.date);
-    const day = new Date(`${dateStr}T00:00:00.000Z`);
+    const { startMs, endMs } = clinicDayUtcRange(dateStr);
+    const dayStart = new Date(startMs);
+    const dayEnd = new Date(endMs);
     const dentist = await prisma.dentist.findUnique({
       where: { id },
       include: { unavailableBlocks: true },
@@ -35,29 +37,33 @@ dentistsRouter.get("/:id/slots", async (req, res, next) => {
       res.status(404).json({ error: "Dentist not found" });
       return;
     }
-    const dayEnd = new Date(day);
-    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
     const existing = await prisma.appointment.findMany({
       where: {
         dentistId: id,
         status: { not: "CANCELLED" },
-        startAt: { gte: day, lt: dayEnd },
+        startAt: { gte: dayStart, lt: dayEnd },
       },
     });
     const clinicBlocks = await prisma.clinicTimeBlock.findMany({
       where: {
         startAt: { lt: dayEnd },
-        endAt: { gt: day },
+        endAt: { gt: dayStart },
       },
     });
     const dentistDateBlocks = await prisma.dentistDateBlock.findMany({
       where: {
         dentistId: id,
         startAt: { lt: dayEnd },
-        endAt: { gt: day },
+        endAt: { gt: dayStart },
       },
     });
-    const slots = generateSlotsForDay(day, dentist.unavailableBlocks, existing, clinicBlocks, dentistDateBlocks);
+    const slots = generateSlotsForDay(
+      dateStr,
+      dentist.unavailableBlocks,
+      existing,
+      clinicBlocks,
+      dentistDateBlocks,
+    );
     res.json(
       slots.map((s) => ({
         startAt: s.start.toISOString(),

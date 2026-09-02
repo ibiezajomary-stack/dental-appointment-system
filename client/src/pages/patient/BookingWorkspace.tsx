@@ -137,14 +137,6 @@ function buildAppointmentNotes(params: {
   return lines.join("\n");
 }
 
-function withinBookingHours(startAtIso: string): boolean {
-  const d = new Date(startAtIso);
-  const mins = d.getHours() * 60 + d.getMinutes();
-  const segOk =
-    (mins >= 9 * 60 && mins + 30 <= 12 * 60) || (mins >= 13 * 60 && mins + 30 <= 15 * 60);
-  return segOk;
-}
-
 function ageFromDobIso(dobIso: string | null | undefined): number | null {
   if (!dobIso) return null;
   const dob = new Date(dobIso);
@@ -303,7 +295,7 @@ export function BookingWorkspace({
       const s = await api<Slot[]>(
         `/api/dentists/${encodeURIComponent(dentistId)}/slots?date=${encodeURIComponent(dateStr)}`,
       );
-      setSlots(s.filter((x) => withinBookingHours(x.startAt)));
+      setSlots(s);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load slots");
     }
@@ -330,8 +322,7 @@ export function BookingWorkspace({
             const s = await api<Slot[]>(
               `/api/dentists/${encodeURIComponent(dentistId)}/slots?date=${encodeURIComponent(ds)}`,
             );
-            const usable = s.filter((x) => withinBookingHours(x.startAt));
-            if (usable.length === 0) next.add(ds);
+            if (s.length === 0) next.add(ds);
           } catch {
             // If a day fails to load, don't block the calendar.
           }

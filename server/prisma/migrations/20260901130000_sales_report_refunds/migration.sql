@@ -1,8 +1,12 @@
--- AlterEnum
-ALTER TYPE "PaymentVerificationStatus" ADD VALUE 'REFUNDED';
+-- AlterEnum (skip if already added by a prior migration)
+DO $$ BEGIN
+  ALTER TYPE "PaymentVerificationStatus" ADD VALUE 'REFUNDED';
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AlterTable
-ALTER TABLE "AppointmentPayment" ADD COLUMN "refundGcashNumber" TEXT;
+ALTER TABLE "AppointmentPayment" ADD COLUMN IF NOT EXISTS "refundGcashNumber" TEXT;
 
 -- CreateTable
 CREATE TABLE "SalesReport" (

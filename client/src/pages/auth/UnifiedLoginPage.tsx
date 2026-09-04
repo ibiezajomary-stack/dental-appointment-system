@@ -69,7 +69,7 @@ export function UnifiedLoginPage() {
               fontSize: "1.45rem",
             }}
           >
-            ✦
+            🦷
           </Box>
           <Typography
             component="h1"

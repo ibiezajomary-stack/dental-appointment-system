@@ -23,7 +23,7 @@ import {
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import dayjs, { type Dayjs } from "dayjs";
+import { type Dayjs } from "dayjs";
 import { api } from "../../lib/api";
 import { formatPhDate, formatPhDateTime, formatPhTime, phParts } from "../../lib/datetime";
 

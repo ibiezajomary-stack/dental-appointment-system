@@ -26,6 +26,7 @@ import {
   Typography,
 } from "@mui/material";
 import { api } from "../../lib/api";
+import { formatPhDate, formatPhTime, isSamePhDay } from "../../lib/datetime";
 
 type Row = {
   id: string;
@@ -51,14 +52,6 @@ type ApptRow = {
 
 function isVirtualFromNotes(notes: string | null | undefined): boolean {
   return /Visit:\s*Virtual/i.test(notes ?? "");
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
 }
 
 function statusDisplay(status: string): string {
@@ -95,11 +88,11 @@ function statusTextColor(status: string): string {
 }
 
 function formatTableDate(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+  return formatPhDate(d, { month: "long", day: "numeric", year: "numeric" });
 }
 
 function formatTableTime(d: Date): string {
-  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return formatPhTime(d);
 }
 
 function formatRecentSubtitle(r: Row): string {
@@ -107,16 +100,15 @@ function formatRecentSubtitle(r: Row): string {
   const ref = r.endedAt ?? r.startedAt ?? r.updatedAt ?? r.createdAt;
   const d = new Date(ref);
   const now = new Date();
-  const timeStr = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  if (isSameDay(d, now)) {
+  const timeStr = formatPhTime(d);
+  if (isSamePhDay(d, now)) {
     return `${label} — Today, ${timeStr}`;
   }
-  const yest = new Date(now);
-  yest.setDate(yest.getDate() - 1);
-  if (isSameDay(d, yest)) {
+  const yest = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  if (isSamePhDay(d, yest)) {
     return `${label} — Yesterday, ${timeStr}`;
   }
-  return `${label} — ${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}, ${timeStr}`;
+  return `${label} — ${formatPhDate(d, { month: "short", day: "numeric", year: "numeric" })}, ${timeStr}`;
 }
 
 const FILTER_ALL = "ALL";
@@ -187,7 +179,7 @@ export function DentistConsultationsPage() {
   const todaysRows = useMemo(() => {
     const today = new Date();
     return virtualAppointments
-      .filter((a) => isSameDay(new Date(a.startAt), today))
+      .filter((a) => isSamePhDay(a.startAt, today))
       .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
   }, [virtualAppointments]);
 

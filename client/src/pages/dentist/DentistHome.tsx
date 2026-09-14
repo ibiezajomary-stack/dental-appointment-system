@@ -10,6 +10,7 @@ import {
   Typography,
 } from "@mui/material";
 import { api } from "../../lib/api";
+import { phParts, phToday } from "../../lib/datetime";
 
 type AppointmentRow = {
   id: string;
@@ -26,12 +27,6 @@ function isSameDay(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
-}
-
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
 }
 
 function calendarWeeks(year: number, month: number): (number | null)[][] {
@@ -54,7 +49,7 @@ function formatHourLabel(h: number): string {
 }
 
 function formatScheduleHeading(d: Date): string {
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString("en-PH", {
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -66,8 +61,14 @@ const TIMELINE_HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17];
 
 export function DentistHome() {
   const [rows, setRows] = useState<AppointmentRow[]>([]);
-  const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [viewMonth, setViewMonth] = useState(() => startOfDay(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const t = phToday();
+    return new Date(t.year, t.month - 1, t.day);
+  });
+  const [viewMonth, setViewMonth] = useState(() => {
+    const t = phToday();
+    return new Date(t.year, t.month - 1, 1);
+  });
 
   const load = useCallback(() => {
     void api<AppointmentRow[]>("/api/appointments").then(setRows);
@@ -81,11 +82,30 @@ export function DentistHome() {
   const m = viewMonth.getMonth();
   const weeks = useMemo(() => calendarWeeks(y, m), [y, m]);
 
+  const dayIndicators = useMemo(() => {
+    const map = new Map<number, { hasAppointment: boolean; hasNew: boolean }>();
+    for (const r of rows) {
+      if (r.status === "CANCELLED") continue;
+      const p = phParts(r.startAt);
+      if (p.year !== y || p.month !== m + 1) continue;
+      const day = p.day;
+      const current = map.get(day) ?? { hasAppointment: false, hasNew: false };
+      if (r.status === "PENDING") current.hasNew = true;
+      else current.hasAppointment = true;
+      map.set(day, current);
+    }
+    return map;
+  }, [rows, y, m]);
+
   const dayAppointments = useMemo(() => {
     return rows.filter((r) => {
       if (r.status === "CANCELLED") return false;
-      const t = new Date(r.startAt);
-      return isSameDay(t, selectedDate);
+      const p = phParts(r.startAt);
+      return (
+        p.year === selectedDate.getFullYear() &&
+        p.month === selectedDate.getMonth() + 1 &&
+        p.day === selectedDate.getDate()
+      );
     });
   }, [rows, selectedDate]);
 
@@ -101,7 +121,7 @@ export function DentistHome() {
       map.set(h, []);
     }
     for (const r of dayAppointments) {
-      const hour = new Date(r.startAt).getHours();
+      const hour = phParts(r.startAt).hour;
       if (hour < 9 || hour > 17 || hour === 12) continue;
       const list = map.get(hour) ?? [];
       list.push(r);
@@ -130,7 +150,8 @@ export function DentistHome() {
     return `${service} • Room 1`;
   }
 
-  const today = new Date();
+  const todayParts = phToday();
+  const today = new Date(todayParts.year, todayParts.month - 1, todayParts.day);
   const isTodaySelected = isSameDay(selectedDate, today);
 
   return (
@@ -142,7 +163,7 @@ export function DentistHome() {
         <Typography variant="body1" color="text.secondary" component="div">
           Viewing schedule for <strong>{formatScheduleHeading(selectedDate)}</strong>
           {!isTodaySelected && (
-            <Button size="small" onClick={() => setSelectedDate(new Date())} sx={{ ml: 1, verticalAlign: "baseline" }}>
+            <Button size="small" onClick={() => setSelectedDate(today)} sx={{ ml: 1, verticalAlign: "baseline" }}>
               Jump to today
             </Button>
           )}
@@ -200,30 +221,60 @@ export function DentistHome() {
                 const cellDate = new Date(y, m, day);
                 const selected = isSameDay(cellDate, selectedDate);
                 const isTodayCell = isSameDay(cellDate, today);
+                const marks = dayIndicators.get(day);
                 return (
-                  <Button
-                    key={`${y}-${m}-${day}`}
-                    variant="text"
-                    onClick={() => setSelectedDate(cellDate)}
-                    sx={{
-                      minWidth: 36,
-                      width: 36,
-                      height: 36,
-                      borderRadius: "50%",
-                      p: 0,
-                      mx: "auto",
-                      fontWeight: selected ? 700 : 400,
-                      bgcolor: selected ? "primary.main" : "transparent",
-                      color: selected ? "primary.contrastText" : isTodayCell ? "primary.main" : "text.primary",
-                      "&:hover": {
-                        bgcolor: selected ? "primary.dark" : "action.hover",
-                      },
-                    }}
-                  >
-                    {day}
-                  </Button>
+                  <Box key={`${y}-${m}-${day}`} sx={{ display: "flex", flexDirection: "column", alignItems: "center", minHeight: 44 }}>
+                    <Button
+                      variant="text"
+                      onClick={() => setSelectedDate(cellDate)}
+                      sx={{
+                        minWidth: 36,
+                        width: 36,
+                        height: 36,
+                        borderRadius: "50%",
+                        p: 0,
+                        mx: "auto",
+                        fontWeight: selected ? 700 : 400,
+                        bgcolor: selected ? "primary.main" : "transparent",
+                        color: selected ? "primary.contrastText" : isTodayCell ? "primary.main" : "text.primary",
+                        "&:hover": {
+                          bgcolor: selected ? "primary.dark" : "action.hover",
+                        },
+                      }}
+                    >
+                      {day}
+                    </Button>
+                    <Box sx={{ display: "flex", gap: 0.4, height: 8, alignItems: "center" }}>
+                      {marks?.hasAppointment ? (
+                        <Box
+                          sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: selected ? "primary.contrastText" : "primary.main" }}
+                          title="Has appointment"
+                        />
+                      ) : null}
+                      {marks?.hasNew ? (
+                        <Box
+                          sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: selected ? "#ffe082" : "warning.main" }}
+                          title="New appointment request"
+                        />
+                      ) : null}
+                    </Box>
+                  </Box>
                 );
               })}
+            </Box>
+            <Box sx={{ display: "flex", gap: 2, mt: 1.5, flexWrap: "wrap" }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "primary.main" }} />
+                <Typography variant="caption" color="text.secondary">
+                  Has appointment
+                </Typography>
+              </Box>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "warning.main" }} />
+                <Typography variant="caption" color="text.secondary">
+                  New appointment request
+                </Typography>
+              </Box>
             </Box>
           </Paper>
 

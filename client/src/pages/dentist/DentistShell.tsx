@@ -34,6 +34,7 @@ import { DentistPatientDetailPage } from "./DentistPatientDetailPage";
 import { DentistNotificationsPage } from "./DentistNotificationsPage";
 import { VideoConsultation } from "../../components/VideoConsultation";
 import { NeedHelpButton } from "../../components/NeedHelpButton";
+import { BrandLogo } from "../../components/BrandLogo";
 
 const NAV = [
   { label: "Home", to: "/dentist" },
@@ -147,20 +148,17 @@ export function DentistShell() {
             >
               <MenuIcon />
             </IconButton>
-            <Typography
+            <Box
               component={RouterLink}
               to="/dentist"
-              variant="h5"
               sx={{
-                fontWeight: 800,
-                color: "primary.main",
                 textDecoration: "none",
                 mr: { xs: 0, md: 2 },
-                letterSpacing: "-0.02em",
+                display: "inline-flex",
               }}
             >
-              iSmile
-            </Typography>
+              <BrandLogo size={36} />
+            </Box>
             <Box
               sx={{
                 display: { xs: "none", md: "flex" },
@@ -194,9 +192,7 @@ export function DentistShell() {
           PaperProps={{ sx: { width: 280 } }}
         >
           <Box sx={{ p: 2 }}>
-            <Typography variant="h6" fontWeight={900} color="primary.main">
-              iSmile
-            </Typography>
+            <BrandLogo size={32} />
             <Typography variant="body2" color="text.secondary">
               Dentist menu
             </Typography>

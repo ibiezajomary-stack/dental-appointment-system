@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useAuth } from "../../auth/AuthContext";
+import { BrandLogo } from "../../components/BrandLogo";
 
 export function UnifiedLoginPage() {
   const { login, user } = useAuth();
@@ -54,22 +55,8 @@ export function UnifiedLoginPage() {
     >
       <Box sx={{ width: "100%", maxWidth: 520 }}>
         <Box sx={{ textAlign: "center", mb: { xs: 3, sm: 4 } }}>
-          <Box
-            sx={{
-              width: 52,
-              height: 52,
-              mx: "auto",
-              mb: 2,
-              display: "grid",
-              placeItems: "center",
-              borderRadius: "16px",
-              color: "#087f8c",
-              bgcolor: "rgba(255, 255, 255, 0.85)",
-              boxShadow: "0 10px 24px rgba(8, 127, 140, 0.14)",
-              fontSize: "1.45rem",
-            }}
-          >
-            ✦
+          <Box sx={{ display: "flex", justifyContent: "center", mb: 2 }}>
+            <BrandLogo size={56} />
           </Box>
           <Typography
             component="h1"

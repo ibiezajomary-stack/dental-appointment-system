@@ -1,4 +1,4 @@
-import { Link as RouterLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link as RouterLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AppBar,
@@ -34,6 +34,8 @@ import { ProfilePage } from "./ProfilePage";
 import { ToothChartPage } from "./ToothChartPage";
 import { VideoPage } from "./VideoPage";
 import { NeedHelpButton } from "../../components/NeedHelpButton";
+import { BrandLogo } from "../../components/BrandLogo";
+import { IncomingCallModal } from "../../components/IncomingCallModal";
 
 const NAV = [
   { label: "Home", to: "/patient" },
@@ -85,10 +87,13 @@ function ShellContent({ children }: { children: ReactNode }) {
 export function PatientShell() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const prevUnread = useRef<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [incomingCall, setIncomingCall] = useState<{ id: string; dentistName: string } | null>(null);
+  const dismissedCalls = useRef(new Set<string>());
   if (user?.role !== "PATIENT") return <Navigate to="/" replace />;
 
   const isHome = location.pathname === "/patient" || location.pathname === "/patient/";
@@ -123,9 +128,9 @@ export function PatientShell() {
           setUnread(res.unread);
         }
       } catch {
-        // ignore polling errors (e.g., transient network)
+        /* ignore */
       }
-      if (!cancelled) timer = window.setTimeout(tick, 5000);
+      if (!cancelled) timer = window.setTimeout(tick, 10_000);
     }
 
     void tick();
@@ -134,6 +139,46 @@ export function PatientShell() {
       if (timer) window.clearTimeout(timer);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    const onVideoPage = location.pathname.includes("/video");
+
+    async function pollIncoming() {
+      try {
+        if (onVideoPage) {
+          setIncomingCall(null);
+        }
+        const rows = await api<
+          {
+            id: string;
+            status: string;
+            dentist?: { displayName?: string | null; user?: { email: string } };
+          }[]
+        >("/api/consultations");
+        if (cancelled) return;
+        const active = rows.find((r) => r.status === "IN_PROGRESS");
+        if (active && !dismissedCalls.current.has(active.id) && !onVideoPage) {
+          setIncomingCall({
+            id: active.id,
+            dentistName: active.dentist?.displayName?.trim() || active.dentist?.user?.email || "Your dentist",
+          });
+        } else if (!active) {
+          setIncomingCall(null);
+        }
+      } catch {
+        /* ignore */
+      }
+      if (!cancelled) timer = window.setTimeout(pollIncoming, 4000);
+    }
+
+    void pollIncoming();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [location.pathname]);
 
   return (
     <ThemeProvider theme={dentistTheme}>
@@ -164,21 +209,18 @@ export function PatientShell() {
             >
               <MenuIcon />
             </IconButton>
-            <Typography
+            <Box
               component={RouterLink}
               to="/patient"
-              variant="h5"
               sx={{
-                fontWeight: 800,
-                color: "primary.main",
                 textDecoration: "none",
                 mr: { xs: 0, md: 2 },
-                letterSpacing: "-0.02em",
                 flexShrink: 0,
+                display: "inline-flex",
               }}
             >
-              iSmile
-            </Typography>
+              <BrandLogo size={36} />
+            </Box>
             <Box
               sx={{
                 display: { xs: "none", md: "flex" },
@@ -212,9 +254,7 @@ export function PatientShell() {
           PaperProps={{ sx: { width: 280 } }}
         >
           <Box sx={{ p: 2 }}>
-            <Typography variant="h6" fontWeight={900} color="primary.main">
-              iSmile
-            </Typography>
+            <BrandLogo size={32} />
             <Typography variant="body2" color="text.secondary">
               Patient menu
             </Typography>
@@ -242,6 +282,20 @@ export function PatientShell() {
           </Box>
         </Drawer>
 
+        <IncomingCallModal
+          open={Boolean(incomingCall) && !location.pathname.includes("/video")}
+          callerName={incomingCall?.dentistName ?? "Your dentist"}
+          onAnswer={() => {
+            if (!incomingCall) return;
+            const id = incomingCall.id;
+            setIncomingCall(null);
+            navigate(`/patient/consultations/${id}/video`);
+          }}
+          onDecline={() => {
+            if (incomingCall) dismissedCalls.current.add(incomingCall.id);
+            setIncomingCall(null);
+          }}
+        />
         <Snackbar
           open={Boolean(toast)}
           autoHideDuration={6000}

@@ -211,7 +211,12 @@ function sanitizePdfText(text: string): string {
 }
 
 function formatDate(d: Date): string {
-  return d.toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" });
+  return d.toLocaleDateString("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 function formatCertDate(s: string): string {
@@ -422,7 +427,7 @@ async function makePdf(title: string, sections: { heading: string; body: string 
   page.drawText(title, { x: left, y, size: 16, font: fontBold, color: rgb(0.05, 0.2, 0.18) });
   y -= 26;
 
-  const stamp = new Date().toLocaleString();
+  const stamp = new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" });
   page.drawText(`Generated: ${stamp}`, { x: left, y, size: 10, font, color: rgb(0.35, 0.35, 0.35) });
   y -= 18;
 

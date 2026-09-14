@@ -120,12 +120,16 @@ async function ensureUploadDir(): Promise<void> {
   await fsPromises.mkdir(path.resolve(config.uploadDir), { recursive: true });
 }
 
-/** Hourly: remind patients with confirmed appointments starting within 24 hours. */
-cron.schedule("0 * * * *", () => {
-  void sendAppointmentReminders().catch((err) => {
-    console.error("[reminders] Cron job failed:", err);
-  });
-});
+/** Hourly (Philippine Time): remind patients with confirmed appointments starting within 24 hours. */
+cron.schedule(
+  "0 * * * *",
+  () => {
+    void sendAppointmentReminders().catch((err) => {
+      console.error("[reminders] Cron job failed:", err);
+    });
+  },
+  { timezone: "Asia/Manila" },
+);
 
 const start = async (): Promise<void> => {
   await ensureUploadDir();

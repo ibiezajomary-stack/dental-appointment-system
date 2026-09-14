@@ -30,6 +30,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api, getApiBase, getToken } from "../../lib/api";
 import { NeedHelpButton } from "../../components/NeedHelpButton";
+import { formatPhDateTime, formatPhTime } from "../../lib/datetime";
 
 type Dentist = {
   id: string;
@@ -190,6 +191,8 @@ export function BookingWorkspace({
   const [teethPhoto, setTeethPhoto] = useState<File | null>(null);
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [refundGcashNumber, setRefundGcashNumber] = useState("");
+  const [gcashReferenceNumber, setGcashReferenceNumber] = useState("");
+  const [qrOpen, setQrOpen] = useState(false);
   const [gcash, setGcash] = useState<DentistGcash | null>(null);
   const [gcashError, setGcashError] = useState<string | null>(null);
   const [amountPhp, setAmountPhp] = useState("500");
@@ -366,6 +369,10 @@ export function BookingWorkspace({
       setError("Please upload your payment proof before confirming.");
       return;
     }
+    if (visitMode === "virtual" && !gcashReferenceNumber.trim()) {
+      setError("Please enter your GCash reference number.");
+      return;
+    }
     const { firstName, lastName } = splitFullName(fullName);
     if (!firstName) {
       setError("Please enter your full name.");
@@ -415,6 +422,9 @@ export function BookingWorkspace({
       if (paymentProof) fd.set("proof", paymentProof);
       if (teethPhoto) fd.set("teethPhoto", teethPhoto);
       if (visitMode === "virtual" && refundGcashNumber) fd.set("refundGcashNumber", refundGcashNumber.trim());
+      if (visitMode === "virtual" && gcashReferenceNumber.trim()) {
+        fd.set("gcashReferenceNumber", gcashReferenceNumber.trim());
+      }
 
       const token = getToken();
       const res = await fetch(`${getApiBase()}/api/payments/appointments`, {
@@ -611,10 +621,7 @@ export function BookingWorkspace({
                     </MenuItem>
                     {slots.map((s) => (
                       <MenuItem key={s.startAt} value={s.startAt}>
-                        {new Date(s.startAt).toLocaleTimeString(undefined, {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
+                        {formatPhTime(s.startAt)}
                       </MenuItem>
                     ))}
                   </Select>
@@ -696,8 +703,8 @@ export function BookingWorkspace({
               <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, p: 2 }}>
                 <Typography sx={{ fontWeight: 800, mb: 1, color: "primary.main" }}>GCash payment</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  Scan the QR code using the GCash app, then upload your payment proof (screenshot/receipt). Payment is
-                  required for virtual visits.
+                  Click Pay here to show the GCash QR, complete the payment, then enter the reference number and upload
+                  your proof. Payment is required for virtual visits.
                 </Typography>
                 {gcashError ? (
                   <Alert severity="warning" sx={{ mb: 1.5 }}>
@@ -705,43 +712,42 @@ export function BookingWorkspace({
                   </Alert>
                 ) : null}
                 {gcash ? (
-                  <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center" }}>
-                    <Box
-                      component="img"
-                      alt="GCash QR"
-                      src={`${getApiBase()}${gcash.qrUrl}`}
-                      sx={{
-                        width: 180,
-                        height: 180,
-                        bgcolor: "#fff",
-                        borderRadius: 2,
-                        border: "1px solid",
-                        borderColor: "divider",
-                        objectFit: "contain",
-                      }}
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                    <Typography variant="body2">
+                      GCash number: <strong>{gcash.phoneNumber ?? "—"}</strong>
+                    </Typography>
+                    <Box>
+                      <Button variant="contained" onClick={() => setQrOpen(true)} sx={{ fontWeight: 800 }}>
+                        Pay here
+                      </Button>
+                    </Box>
+                    <TextField
+                      label="Amount (PHP)"
+                      value={amountPhp}
+                      onChange={(e) => setAmountPhp(e.target.value)}
+                      size="small"
+                      inputProps={{ inputMode: "decimal" }}
                     />
-                    <Box sx={{ flex: "1 1 240px" }}>
-                      <Typography variant="body2" sx={{ mb: 1 }}>
-                        GCash number: <strong>{gcash.phoneNumber ?? "—"}</strong>
-                      </Typography>
-                      <TextField
-                        label="Amount (PHP)"
-                        value={amountPhp}
-                        onChange={(e) => setAmountPhp(e.target.value)}
-                        size="small"
-                        sx={{ mb: 1.5 }}
-                        inputProps={{ inputMode: "decimal" }}
-                      />
-                      <TextField
-                        label="Your GCash number (for refunds)"
-                        placeholder="09xxxxxxxxx"
-                        value={refundGcashNumber}
-                        onChange={(e) => setRefundGcashNumber(e.target.value)}
-                        size="small"
-                        fullWidth
-                        sx={{ mb: 1.5 }}
-                        helperText="Enter your GCash number for refunds"
-                      />
+                    <TextField
+                      label="Reference number"
+                      placeholder="GCash transaction / reference number"
+                      value={gcashReferenceNumber}
+                      onChange={(e) => setGcashReferenceNumber(e.target.value)}
+                      size="small"
+                      fullWidth
+                      required
+                      helperText="Enter the GCash reference number after you pay"
+                    />
+                    <TextField
+                      label="Your GCash number (for refunds)"
+                      placeholder="09xxxxxxxxx"
+                      value={refundGcashNumber}
+                      onChange={(e) => setRefundGcashNumber(e.target.value)}
+                      size="small"
+                      fullWidth
+                      helperText="Enter your GCash number for refunds"
+                    />
+                    <Box>
                       <Button
                         variant="outlined"
                         component="label"
@@ -763,6 +769,36 @@ export function BookingWorkspace({
                         {paymentProof?.name ?? "No file chosen"}
                       </Typography>
                     </Box>
+                    <Dialog open={qrOpen} onClose={() => setQrOpen(false)} maxWidth="sm" fullWidth>
+                      <DialogTitle sx={{ fontWeight: 800 }}>Scan to pay</DialogTitle>
+                      <DialogContent sx={{ display: "flex", flexDirection: "column", alignItems: "center", pb: 1 }}>
+                        <Box
+                          component="img"
+                          alt="GCash QR"
+                          src={`${getApiBase()}${gcash.qrUrl}`}
+                          sx={{
+                            width: "100%",
+                            maxWidth: 420,
+                            height: "auto",
+                            aspectRatio: "1 / 1",
+                            bgcolor: "#fff",
+                            borderRadius: 2,
+                            border: "1px solid",
+                            borderColor: "divider",
+                            objectFit: "contain",
+                            p: 1,
+                          }}
+                        />
+                        <Typography variant="body2" sx={{ mt: 2 }}>
+                          GCash number: <strong>{gcash.phoneNumber ?? "—"}</strong>
+                        </Typography>
+                      </DialogContent>
+                      <DialogActions>
+                        <Button onClick={() => setQrOpen(false)} variant="contained">
+                          Done
+                        </Button>
+                      </DialogActions>
+                    </Dialog>
                   </Box>
                 ) : (
                   <Typography variant="body2" color="text.secondary">
@@ -917,8 +953,7 @@ export function BookingWorkspace({
               {appointments.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
-                    {new Date(r.startAt).toLocaleString()} –{" "}
-                    {new Date(r.endAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatPhDateTime(r.startAt)} – {formatPhTime(r.endAt)}
                   </TableCell>
                   <TableCell>{r.dentist.user.email}</TableCell>
                   <TableCell>{r.status}</TableCell>

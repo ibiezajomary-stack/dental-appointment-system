@@ -11,6 +11,7 @@ import {
   isVirtualFromAppointmentNotes,
   isWithinDefaultBookingSegments,
 } from "../lib/slots.js";
+import { formatPhDateTime } from "../lib/datetime.js";
 
 export const paymentsRouter = Router();
 
@@ -39,6 +40,7 @@ const createPaymentSchema = z.object({
   notes: z.string().optional(),
   amountCents: z.coerce.number().int().nonnegative().default(0),
   refundGcashNumber: z.string().optional(), // Optional: patient's GCash number for refunds
+  gcashReferenceNumber: z.string().optional(),
 });
 
 paymentsRouter.post(
@@ -74,6 +76,10 @@ paymentsRouter.post(
       const teethPhoto = files?.teethPhoto?.[0];
       if (isVirtual && !proof) {
         res.status(400).json({ error: "proof file required" });
+        return;
+      }
+      if (isVirtual && !body.gcashReferenceNumber?.trim()) {
+        res.status(400).json({ error: "GCash reference number is required" });
         return;
       }
       if (!isWithinDefaultBookingSegments(startAt, endAt)) {
@@ -122,10 +128,7 @@ paymentsRouter.post(
             dentistId: body.dentistId,
             patientId: patient.id,
             title: "New appointment booked",
-            message: `${patient.firstName} ${patient.lastName} booked an appointment for ${startAt.toLocaleString(undefined, {
-              dateStyle: "medium",
-              timeStyle: "short",
-            })}.`,
+            message: `${patient.firstName} ${patient.lastName} booked an appointment for ${formatPhDateTime(startAt)}.`,
           },
         });
 
@@ -167,6 +170,7 @@ paymentsRouter.post(
                   proofMimeType: proof.mimetype,
                   proofOriginalName: proof.originalname,
                   refundGcashNumber: body.refundGcashNumber?.trim() || null,
+                  gcashReferenceNumber: body.gcashReferenceNumber?.trim() || null,
                 },
               })
             : null;
@@ -339,6 +343,7 @@ paymentsRouter.get(
           createdAt: r.createdAt,
           verifiedAt: r.verifiedAt,
           refundGcashNumber: r.refundGcashNumber,
+          gcashReferenceNumber: r.gcashReferenceNumber,
           appointment: {
             id: r.appointmentId,
             startAt: r.appointment.startAt,
@@ -453,10 +458,7 @@ paymentsRouter.patch(
         if (body.status === "REFUNDED") {
           const appt = await tx.appointment.findUnique({ where: { id: payment.appointmentId } });
           const refundTarget = existing.refundGcashNumber?.trim() || "the number you provided";
-          const appointmentDate = appt ? new Date(appt.startAt).toLocaleString(undefined, {
-            dateStyle: "medium",
-            timeStyle: "short",
-          }) : "your appointment";
+          const appointmentDate = appt ? formatPhDateTime(new Date(appt.startAt)) : "your appointment";
 
           await tx.notification.create({
             data: {

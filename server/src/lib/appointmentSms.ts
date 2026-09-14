@@ -2,6 +2,7 @@ import { config } from "./config.js";
 import { prisma } from "./prisma.js";
 import { getClinicContactInfo, resolveClinicPhone } from "./clinicSettings.js";
 import { buildConfirmationMessage, sendSms } from "./sms.js";
+import { formatPhDate, formatPhTime } from "./datetime.js";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
@@ -18,13 +19,8 @@ type AppointmentForSms = {
 
 export function formatAppointmentDateTime(startAt: Date): { date: string; time: string } {
   return {
-    date: startAt.toLocaleDateString("en-PH", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    }),
-    time: startAt.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }),
+    date: formatPhDate(startAt),
+    time: formatPhTime(startAt),
   };
 }
 

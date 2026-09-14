@@ -25,6 +25,7 @@ import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import dayjs, { type Dayjs } from "dayjs";
 import { api } from "../../lib/api";
+import { formatPhDate, formatPhDateTime, formatPhTime, phParts } from "../../lib/datetime";
 
 type Row = {
   id: string;
@@ -44,8 +45,7 @@ const STATUS_LABEL: Record<(typeof STATUS_ORDER)[number], string> = {
 };
 
 function formatAppointmentWhen(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, {
+  return formatPhDate(iso, {
     weekday: "long",
     month: "short",
     day: "numeric",
@@ -123,13 +123,13 @@ export function DentistAppointmentsPage() {
     const endH = typeof endHour === "number" ? endHour : null;
 
     return rows.filter((r) => {
-      const d = new Date(r.startAt);
+      const p = phParts(r.startAt);
       if (dateKey) {
-        const k = dayjs(d).format("YYYY-MM-DD");
+        const k = `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
         if (k !== dateKey) return false;
       }
       if (startH !== null || endH !== null) {
-        const h = d.getHours();
+        const h = p.hour;
         if (startH !== null && h < startH) return false;
         if (endH !== null && h > endH) return false;
       }
@@ -410,8 +410,7 @@ export function DentistAppointmentsPage() {
                   Schedule
                 </Typography>
                 <Typography>
-                  {new Date(detailRow.startAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} –{" "}
-                  {new Date(detailRow.endAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                  {formatPhDateTime(detailRow.startAt)} – {formatPhTime(detailRow.endAt)}
                 </Typography>
               </Box>
               <Box>

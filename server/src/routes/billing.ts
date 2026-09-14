@@ -133,7 +133,7 @@ billingRouter.delete(
       const id = typeof req.params.id === "string" ? req.params.id : req.params.id[0];
       const record = await prisma.salesReport.findUnique({ where: { id } });
       if (!record) {
-        res.status(404).json({ error: "Sales report not found" });
+        res.status(404).json({ error: "Income report not found" });
         return;
       }
       if (record.dentistId !== dentist.id) {

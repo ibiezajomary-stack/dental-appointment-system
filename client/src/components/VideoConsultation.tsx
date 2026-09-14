@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Alert, Box, Paper, Typography } from "@mui/material";
 import { api } from "../lib/api";
+import { useAuth } from "../auth/AuthContext";
 
 const JITSI_BASE = "https://meet.jit.si";
 
@@ -13,6 +14,7 @@ type Consultation = {
 
 export function VideoConsultation() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const [consultation, setConsultation] = useState<Consultation | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +34,9 @@ export function VideoConsultation() {
         Video consultation
       </Typography>
       <Typography variant="body2" color="text.secondary" paragraph>
-        Join the same Jitsi room as the patient for your live tele-dental visit.
+        {user?.role === "PATIENT"
+          ? "You are in the live virtual consultation with your dentist."
+          : "Join the same Jitsi room as the patient for your live tele-dental visit."}
       </Typography>
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>

@@ -84,6 +84,12 @@ function ShellContent({ children }: { children: ReactNode }) {
   );
 }
 
+type IncomingConsultation = {
+  id: string;
+  status: string;
+  dentist?: { displayName?: string | null; user?: { email: string } };
+};
+
 export function PatientShell() {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -94,7 +100,8 @@ export function PatientShell() {
   const [toast, setToast] = useState<string | null>(null);
   const [incomingCall, setIncomingCall] = useState<{ id: string; dentistName: string } | null>(null);
   const dismissedCalls = useRef(new Set<string>());
-  if (user?.role !== "PATIENT") return <Navigate to="/" replace />;
+  const isPatient = user?.role === "PATIENT";
+  const onVideoPage = location.pathname.includes("/video");
 
   const isHome = location.pathname === "/patient" || location.pathname === "/patient/";
 
@@ -113,6 +120,7 @@ export function PatientShell() {
   }, [unread]);
 
   useEffect(() => {
+    if (!isPatient) return;
     let cancelled = false;
     let timer: number | undefined;
 
@@ -138,47 +146,64 @@ export function PatientShell() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, []);
+  }, [isPatient]);
 
   useEffect(() => {
+    if (!isPatient) return;
     let cancelled = false;
     let timer: number | undefined;
-    const onVideoPage = location.pathname.includes("/video");
+    let inFlight = false;
 
     async function pollIncoming() {
+      if (inFlight) return;
+      inFlight = true;
       try {
         if (onVideoPage) {
           setIncomingCall(null);
         }
-        const rows = await api<
-          {
-            id: string;
-            status: string;
-            dentist?: { displayName?: string | null; user?: { email: string } };
-          }[]
-        >("/api/consultations");
+        const active = await api<IncomingConsultation | null>("/api/consultations/incoming");
         if (cancelled) return;
-        const active = rows.find((r) => r.status === "IN_PROGRESS");
-        if (active && !dismissedCalls.current.has(active.id) && !onVideoPage) {
-          setIncomingCall({
-            id: active.id,
-            dentistName: active.dentist?.displayName?.trim() || active.dentist?.user?.email || "Your dentist",
-          });
-        } else if (!active) {
+        if (active?.status === "IN_PROGRESS" && !dismissedCalls.current.has(active.id) && !onVideoPage) {
+          const dentistName =
+            active.dentist?.displayName?.trim() || active.dentist?.user?.email || "Your dentist";
+          setIncomingCall((prev) =>
+            prev?.id === active.id && prev.dentistName === dentistName ? prev : { id: active.id, dentistName },
+          );
+        } else if (!active || active.status !== "IN_PROGRESS") {
+          dismissedCalls.current.clear();
           setIncomingCall(null);
         }
       } catch {
         /* ignore */
+      } finally {
+        inFlight = false;
       }
-      if (!cancelled) timer = window.setTimeout(pollIncoming, 4000);
     }
 
-    void pollIncoming();
+    function schedule() {
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        void pollIncoming().then(schedule);
+      }, 1500);
+    }
+
+    const kick = () => {
+      if (document.visibilityState === "hidden") return;
+      void pollIncoming();
+    };
+
+    void pollIncoming().then(schedule);
+    window.addEventListener("focus", kick);
+    document.addEventListener("visibilitychange", kick);
     return () => {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
+      window.removeEventListener("focus", kick);
+      document.removeEventListener("visibilitychange", kick);
     };
-  }, [location.pathname]);
+  }, [isPatient, onVideoPage]);
+
+  if (!isPatient) return <Navigate to="/" replace />;
 
   return (
     <ThemeProvider theme={dentistTheme}>
@@ -283,11 +308,12 @@ export function PatientShell() {
         </Drawer>
 
         <IncomingCallModal
-          open={Boolean(incomingCall) && !location.pathname.includes("/video")}
+          open={Boolean(incomingCall) && !onVideoPage}
           callerName={incomingCall?.dentistName ?? "Your dentist"}
           onAnswer={() => {
             if (!incomingCall) return;
             const id = incomingCall.id;
+            dismissedCalls.current.add(id);
             setIncomingCall(null);
             navigate(`/patient/consultations/${id}/video`);
           }}

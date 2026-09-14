@@ -78,9 +78,14 @@ export function IncomingCallModal({ open, callerName, onAnswer, onDecline }: Inc
   return (
     <Dialog
       open={open}
-      onClose={onDecline}
+      disableEscapeKeyDown
+      onClose={(_, reason) => {
+        if (reason === "backdropClick" || reason === "escapeKeyDown") return;
+        onDecline();
+      }}
       fullWidth
       maxWidth="xs"
+      sx={{ zIndex: 14000 }}
       PaperProps={{
         sx: {
           borderRadius: 4,
@@ -150,6 +155,7 @@ export function IncomingCallModal({ open, callerName, onAnswer, onDecline }: Inc
         <Box sx={{ textAlign: "center" }}>
           <Button
             onClick={onAnswer}
+            autoFocus
             aria-label="Answer call"
             sx={{
               width: 64,

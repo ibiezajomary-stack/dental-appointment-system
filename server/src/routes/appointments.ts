@@ -10,6 +10,8 @@ import {
   isVirtualFromAppointmentNotes,
   isWithinDefaultBookingSegments,
 } from "../lib/slots.js";
+import { sendAppointmentConfirmedSms } from "../lib/appointmentSms.js";
+import { formatPhDateTime } from "../lib/datetime.js";
 
 export const appointmentsRouter = Router();
 
@@ -83,10 +85,7 @@ appointmentsRouter.post("/", requireAuth, requireRole(Role.PATIENT), async (req:
           dentistId: body.dentistId,
           patientId: patient.id,
           title: "New appointment booked",
-          message: `${patient.firstName} ${patient.lastName} booked an appointment for ${startAt.toLocaleString(undefined, {
-            dateStyle: "medium",
-            timeStyle: "short",
-          })}.`,
+          message: `${patient.firstName} ${patient.lastName} booked an appointment for ${formatPhDateTime(startAt)}.`,
         },
       });
       return appt;
@@ -186,11 +185,21 @@ appointmentsRouter.patch(
           ...(body.status !== undefined && { status: body.status }),
           ...(body.notes !== undefined && { notes: body.notes }),
         },
-        include: { patient: true, dentist: { include: { user: { select: { email: true } } } } },
+        include: {
+          patient: true,
+          dentist: {
+            select: {
+              displayName: true,
+              phone: true,
+              clinicAddress: true,
+              user: { select: { email: true } },
+            },
+          },
+        },
       });
 
       if (body.status === AppointmentStatus.CONFIRMED && prevStatus !== AppointmentStatus.CONFIRMED) {
-        const when = updated.startAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        const when = formatPhDateTime(updated.startAt);
         await prisma.notification.create({
           data: {
             patientId: updated.patientId,
@@ -199,10 +208,13 @@ appointmentsRouter.patch(
             message: `Your appointment on ${when} has been accepted/confirmed by the dentist.`,
           },
         });
+        void sendAppointmentConfirmedSms(updated).catch((err) => {
+          console.error("[sms] Confirmation SMS error:", err);
+        });
       }
 
       if (body.status === AppointmentStatus.CANCELLED && prevStatus !== AppointmentStatus.CANCELLED) {
-        const when = updated.startAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        const when = formatPhDateTime(updated.startAt);
         await prisma.notification.create({
           data: {
             patientId: updated.patientId,
@@ -245,7 +257,7 @@ appointmentsRouter.delete(
         data: { status: AppointmentStatus.CANCELLED },
       });
       if ((isDentistOwner || isAdmin) && existing.status !== AppointmentStatus.CANCELLED) {
-        const when = existing.startAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        const when = formatPhDateTime(existing.startAt);
         await prisma.notification.create({
           data: {
             patientId: existing.patientId,

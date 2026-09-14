@@ -1,26 +1,29 @@
 import { Router } from "express";
 import { config } from "../lib/config.js";
+import { getClinicContactInfo, resolveClinicPhone } from "../lib/clinicSettings.js";
 import { prisma } from "../lib/prisma.js";
 
 export const publicSupportRouter = Router();
 
 publicSupportRouter.get("/", async (_req, res, next) => {
   try {
-    const dentist = await prisma.dentist.findFirst({
-      select: {
-        phone: true,
-        displayName: true,
-        clinicAddress: true,
-        user: { select: { email: true } },
-      },
-      orderBy: { id: "asc" },
-    });
+    const [dentist, contact] = await Promise.all([
+      prisma.dentist.findFirst({
+        select: {
+          phone: true,
+          displayName: true,
+          clinicAddress: true,
+          user: { select: { email: true } },
+        },
+        orderBy: { id: "asc" },
+      }),
+      getClinicContactInfo(),
+    ]);
 
-    const clinicPhone =
-      dentist?.phone?.trim() || process.env.CLINIC_PHONE?.trim() || config.supportPhone;
+    const clinicPhone = resolveClinicPhone(contact, dentist?.phone);
 
     res.json({
-      supportPhone: config.supportPhone,
+      supportPhone: contact.supportPhone ?? dentist?.phone?.trim() ?? null,
       clinicPhone,
       clinicEmail: dentist?.user.email ?? null,
       supportHours: config.supportHours,

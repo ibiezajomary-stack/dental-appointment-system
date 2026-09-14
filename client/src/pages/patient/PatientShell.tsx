@@ -1,4 +1,4 @@
-import { Link as RouterLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link as RouterLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AppBar,
@@ -34,6 +34,8 @@ import { ProfilePage } from "./ProfilePage";
 import { ToothChartPage } from "./ToothChartPage";
 import { VideoPage } from "./VideoPage";
 import { NeedHelpButton } from "../../components/NeedHelpButton";
+import { BrandLogo } from "../../components/BrandLogo";
+import { IncomingCallModal } from "../../components/IncomingCallModal";
 
 const NAV = [
   { label: "Home", to: "/patient" },
@@ -82,14 +84,24 @@ function ShellContent({ children }: { children: ReactNode }) {
   );
 }
 
+type IncomingConsultation = {
+  id: string;
+  status: string;
+  dentist?: { displayName?: string | null; user?: { email: string } };
+};
+
 export function PatientShell() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const prevUnread = useRef<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  if (user?.role !== "PATIENT") return <Navigate to="/" replace />;
+  const [incomingCall, setIncomingCall] = useState<{ id: string; dentistName: string } | null>(null);
+  const dismissedCalls = useRef(new Set<string>());
+  const isPatient = user?.role === "PATIENT";
+  const onVideoPage = location.pathname.includes("/video");
 
   const isHome = location.pathname === "/patient" || location.pathname === "/patient/";
 
@@ -108,6 +120,7 @@ export function PatientShell() {
   }, [unread]);
 
   useEffect(() => {
+    if (!isPatient) return;
     let cancelled = false;
     let timer: number | undefined;
 
@@ -123,9 +136,9 @@ export function PatientShell() {
           setUnread(res.unread);
         }
       } catch {
-        // ignore polling errors (e.g., transient network)
+        /* ignore */
       }
-      if (!cancelled) timer = window.setTimeout(tick, 5000);
+      if (!cancelled) timer = window.setTimeout(tick, 10_000);
     }
 
     void tick();
@@ -133,7 +146,64 @@ export function PatientShell() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, []);
+  }, [isPatient]);
+
+  useEffect(() => {
+    if (!isPatient) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    let inFlight = false;
+
+    async function pollIncoming() {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        if (onVideoPage) {
+          setIncomingCall(null);
+        }
+        const active = await api<IncomingConsultation | null>("/api/consultations/incoming");
+        if (cancelled) return;
+        if (active?.status === "IN_PROGRESS" && !dismissedCalls.current.has(active.id) && !onVideoPage) {
+          const dentistName =
+            active.dentist?.displayName?.trim() || active.dentist?.user?.email || "Your dentist";
+          setIncomingCall((prev) =>
+            prev?.id === active.id && prev.dentistName === dentistName ? prev : { id: active.id, dentistName },
+          );
+        } else if (!active || active.status !== "IN_PROGRESS") {
+          dismissedCalls.current.clear();
+          setIncomingCall(null);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    function schedule() {
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        void pollIncoming().then(schedule);
+      }, 1500);
+    }
+
+    const kick = () => {
+      if (document.visibilityState === "hidden") return;
+      void pollIncoming();
+    };
+
+    void pollIncoming().then(schedule);
+    window.addEventListener("focus", kick);
+    document.addEventListener("visibilitychange", kick);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+      window.removeEventListener("focus", kick);
+      document.removeEventListener("visibilitychange", kick);
+    };
+  }, [isPatient, onVideoPage]);
+
+  if (!isPatient) return <Navigate to="/" replace />;
 
   return (
     <ThemeProvider theme={dentistTheme}>
@@ -164,21 +234,18 @@ export function PatientShell() {
             >
               <MenuIcon />
             </IconButton>
-            <Typography
+            <Box
               component={RouterLink}
               to="/patient"
-              variant="h5"
               sx={{
-                fontWeight: 800,
-                color: "primary.main",
                 textDecoration: "none",
                 mr: { xs: 0, md: 2 },
-                letterSpacing: "-0.02em",
                 flexShrink: 0,
+                display: "inline-flex",
               }}
             >
-              iSmile
-            </Typography>
+              <BrandLogo size={36} />
+            </Box>
             <Box
               sx={{
                 display: { xs: "none", md: "flex" },
@@ -212,9 +279,7 @@ export function PatientShell() {
           PaperProps={{ sx: { width: 280 } }}
         >
           <Box sx={{ p: 2 }}>
-            <Typography variant="h6" fontWeight={900} color="primary.main">
-              iSmile
-            </Typography>
+            <BrandLogo size={32} />
             <Typography variant="body2" color="text.secondary">
               Patient menu
             </Typography>
@@ -242,6 +307,21 @@ export function PatientShell() {
           </Box>
         </Drawer>
 
+        <IncomingCallModal
+          open={Boolean(incomingCall) && !onVideoPage}
+          callerName={incomingCall?.dentistName ?? "Your dentist"}
+          onAnswer={() => {
+            if (!incomingCall) return;
+            const id = incomingCall.id;
+            dismissedCalls.current.add(id);
+            setIncomingCall(null);
+            navigate(`/patient/consultations/${id}/video`);
+          }}
+          onDecline={() => {
+            if (incomingCall) dismissedCalls.current.add(incomingCall.id);
+            setIncomingCall(null);
+          }}
+        />
         <Snackbar
           open={Boolean(toast)}
           autoHideDuration={6000}

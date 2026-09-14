@@ -117,6 +117,27 @@ consultationsRouter.get("/", requireAuth, async (req: AuthedRequest, res, next) 
   }
 });
 
+// Patient ringing call: must be registered before `/:id`.
+consultationsRouter.get("/incoming", requireAuth, requireRole(Role.PATIENT), async (req: AuthedRequest, res, next) => {
+  try {
+    const patient = await prisma.patient.findUnique({ where: { userId: req.userId! } });
+    if (!patient) {
+      res.json(null);
+      return;
+    }
+    const active = await prisma.consultation.findFirst({
+      where: { patientId: patient.id, status: ConsultationStatus.IN_PROGRESS },
+      include: {
+        dentist: { include: { user: { select: { email: true } } } },
+      },
+      orderBy: { startedAt: "desc" },
+    });
+    res.json(active);
+  } catch (e) {
+    next(e);
+  }
+});
+
 consultationsRouter.get("/:id", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     const id = typeof req.params.id === "string" ? req.params.id : req.params.id[0];

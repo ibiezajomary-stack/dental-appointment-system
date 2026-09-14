@@ -2,9 +2,12 @@ import type { DentistUnavailableBlock } from "@prisma/client";
 
 const SLOT_MINUTES = 30;
 
+/** Clinic operates in Philippine time (UTC+8, no DST). */
+export const CLINIC_UTC_OFFSET_HOURS = 8;
+
 /**
  * Bookable segments for each weekday before applying dentist-specific unavailable blocks
- * (minutes from local midnight). Lunch break is implicit between segments.
+ * (minutes from clinic-local midnight). Lunch break is implicit between segments.
  */
 export const DEFAULT_BOOKING_SEGMENTS_MINUTES: readonly { start: number; end: number }[] = [
   { start: 9 * 60, end: 12 * 60 },
@@ -18,6 +21,33 @@ export const DEFAULT_SCHEDULE_END_MINUTES =
 
 export type TimeSlot = { start: Date; end: Date };
 
+export function parseClinicDateString(dateStr: string): { year: number; month: number; day: number } {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return { year, month, day };
+}
+
+/** UTC epoch ms at clinic-local midnight for the given calendar date. */
+export function clinicDayStartUtcMs(year: number, month: number, day: number): number {
+  return Date.UTC(year, month - 1, day) - CLINIC_UTC_OFFSET_HOURS * 60 * 60 * 1000;
+}
+
+export function clinicDayUtcRange(dateStr: string): { startMs: number; endMs: number } {
+  const { year, month, day } = parseClinicDateString(dateStr);
+  const startMs = clinicDayStartUtcMs(year, month, day);
+  return { startMs, endMs: startMs + 24 * 60 * 60 * 1000 };
+}
+
+export function clinicDayOfWeek(dateStr: string): number {
+  const { year, month, day } = parseClinicDateString(dateStr);
+  return new Date(clinicDayStartUtcMs(year, month, day) + 12 * 60 * 60 * 1000).getUTCDay();
+}
+
+export function clinicMinutesFromMidnight(instant: Date): number {
+  const shifted = instant.getTime() + CLINIC_UTC_OFFSET_HOURS * 60 * 60 * 1000;
+  const t = new Date(shifted);
+  return t.getUTCHours() * 60 + t.getUTCMinutes();
+}
+
 function pushSlotsForSegment(params: {
   dayStartMs: number;
   segStartMin: number;
@@ -27,8 +57,10 @@ function pushSlotsForSegment(params: {
   clinicBlocks: { startAt: Date; endAt: Date }[];
   dentistDateBlocks: { startAt: Date; endAt: Date }[];
   out: TimeSlot[];
+  nowMs: number;
 }): void {
-  const { dayStartMs, segStartMin, segEndMin, dayBlocks, existing, clinicBlocks, dentistDateBlocks, out } = params;
+  const { dayStartMs, segStartMin, segEndMin, dayBlocks, existing, clinicBlocks, dentistDateBlocks, out, nowMs } =
+    params;
   const segStartMs = dayStartMs + segStartMin * 60 * 1000;
   const segEndMs = dayStartMs + segEndMin * 60 * 1000;
   let cursor = segStartMs;
@@ -42,30 +74,32 @@ function pushSlotsForSegment(params: {
     const overlapsAppt = existing.some((a) => a.startAt < end && a.endAt > start);
     const overlapsClinic = clinicBlocks.some((c) => c.startAt < end && c.endAt > start);
     const overlapsDentistDate = dentistDateBlocks.some((c) => c.startAt < end && c.endAt > start);
-    if (!overlapsUnavailable && !overlapsAppt && !overlapsClinic && !overlapsDentistDate) out.push({ start, end });
+    const inPast = start.getTime() <= nowMs;
+    if (!overlapsUnavailable && !overlapsAppt && !overlapsClinic && !overlapsDentistDate && !inPast) {
+      out.push({ start, end });
+    }
     cursor += SLOT_MINUTES * 60 * 1000;
   }
 }
 
-/** Returns local start/end for each bookable slot on `day`. */
+/** Returns bookable slots for a clinic-local calendar date (`YYYY-MM-DD`). */
 export function generateSlotsForDay(
-  day: Date,
+  dateStr: string,
   unavailable: DentistUnavailableBlock[],
   existing: { startAt: Date; endAt: Date }[],
-  /** Clinic-wide blocks; any slot overlapping these is omitted. */
   clinicBlocks: { startAt: Date; endAt: Date }[] = [],
-  /** Dentist one-time blocks for this date; any slot overlapping these is omitted. */
   dentistDateBlocks: { startAt: Date; endAt: Date }[] = [],
 ): TimeSlot[] {
-  const dow = day.getDay();
+  const { year, month, day } = parseClinicDateString(dateStr);
+  const dow = clinicDayOfWeek(dateStr);
   const dayBlocks = unavailable.filter((u) => u.dayOfWeek === dow);
   const slots: TimeSlot[] = [];
-
-  const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0, 0).getTime();
+  const dayStartMs = clinicDayStartUtcMs(year, month, day);
+  const nowMs = Date.now();
 
   for (const seg of DEFAULT_BOOKING_SEGMENTS_MINUTES) {
     pushSlotsForSegment({
-      dayStartMs: dayStart,
+      dayStartMs,
       segStartMin: seg.start,
       segEndMin: seg.end,
       dayBlocks,
@@ -73,6 +107,7 @@ export function generateSlotsForDay(
       clinicBlocks,
       dentistDateBlocks,
       out: slots,
+      nowMs,
     });
   }
   slots.sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -80,9 +115,8 @@ export function generateSlotsForDay(
 }
 
 export function isWithinDefaultBookingSegments(start: Date, end: Date): boolean {
-  const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0).getTime();
-  const startMin = Math.round((start.getTime() - dayStart) / (60 * 1000));
-  const endMin = Math.round((end.getTime() - dayStart) / (60 * 1000));
+  const startMin = clinicMinutesFromMidnight(start);
+  const endMin = clinicMinutesFromMidnight(end);
   if (!(start < end)) return false;
   return DEFAULT_BOOKING_SEGMENTS_MINUTES.some((seg) => startMin >= seg.start && endMin <= seg.end);
 }

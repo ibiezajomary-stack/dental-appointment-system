@@ -14,8 +14,8 @@ import PhoneIcon from "@mui/icons-material/Phone";
 import { api } from "../lib/api";
 
 type SupportInfo = {
-  supportPhone: string;
-  clinicPhone: string;
+  supportPhone: string | null;
+  clinicPhone: string | null;
   supportHours: string;
   clinicName: string;
   clinicAddress?: string | null;
@@ -56,14 +56,7 @@ export function NeedHelpButton({
     if (!open) return;
     void api<SupportInfo>("/api/public/support")
       .then(setInfo)
-      .catch(() =>
-        setInfo({
-          supportPhone: "0917-000-0000",
-          clinicPhone: "0917-000-0000",
-          supportHours: "Monday–Friday, 8:00 AM – 5:00 PM",
-          clinicName: "Dental Clinic",
-        }),
-      );
+      .catch(() => setInfo(null));
   }, [open]);
 
   const clinicPhone = info?.clinicPhone ?? info?.supportPhone;

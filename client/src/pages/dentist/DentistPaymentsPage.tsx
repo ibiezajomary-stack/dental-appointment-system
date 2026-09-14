@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Collapse,
   Grid,
   Paper,
   Stack,
@@ -15,6 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import { api, getApiBase, getToken } from "../../lib/api";
+import { formatPhDateTime } from "../../lib/datetime";
 
 type Row = {
   id: string;
@@ -23,6 +25,7 @@ type Row = {
   createdAt: string;
   verifiedAt: string | null;
   refundGcashNumber: string | null;
+  gcashReferenceNumber: string | null;
   patient: { id: string; firstName: string; lastName: string };
   appointment: { id: string; startAt: string; endAt: string; status: string };
   proofDownloadUrl: string;
@@ -38,7 +41,26 @@ type SalesReportRow = {
 
 function php(amountCents: number): string {
   const v = amountCents / 100;
-  return v.toLocaleString(undefined, { style: "currency", currency: "PHP" });
+  return v.toLocaleString("en-PH", { style: "currency", currency: "PHP" });
+}
+
+function pesosToCents(raw: string): number | null {
+  const n = Number(String(raw).replace(/,/g, "").trim());
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100);
+}
+
+function localDayKey(iso: string): string {
+  const date = new Date(iso);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function localMonthKey(iso: string): string {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function paymentStatusLabel(status: Row["status"]): string {
@@ -65,6 +87,7 @@ export function DentistPaymentsPage() {
     description: "",
   });
   const [isSubmittingSales, setIsSubmittingSales] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
 
   async function load() {
     setError(null);
@@ -81,7 +104,7 @@ export function DentistPaymentsPage() {
       const data = await api<SalesReportRow[]>("/api/billing/sales-reports");
       setSalesRows(data);
     } catch (e) {
-      setError((current) => current ?? (e instanceof Error ? e.message : "Failed to load sales reports"));
+      setError((current) => current ?? (e instanceof Error ? e.message : "Failed to load income reports"));
     }
   }
 
@@ -115,9 +138,9 @@ export function DentistPaymentsPage() {
     event.preventDefault();
     setError(null);
     setSuccess(null);
-    const amountCents = Number(salesForm.amount);
-    if (!salesForm.paymentDate || Number.isNaN(amountCents) || amountCents <= 0) {
-      setError("Please enter a valid sales amount and date.");
+    const amountCents = pesosToCents(salesForm.amount);
+    if (!salesForm.paymentDate || amountCents === null) {
+      setError("Please enter a valid income amount in pesos and a date.");
       return;
     }
 
@@ -132,11 +155,13 @@ export function DentistPaymentsPage() {
           description: salesForm.description.trim() || undefined,
         }),
       });
+      const monthKey = salesForm.paymentDate.slice(0, 7);
       setSalesForm({ amount: "", paymentDate: new Date().toISOString().slice(0, 10), description: "" });
       await loadSalesReports();
-      setSuccess("Daily sales entry saved successfully.");
+      setSelectedMonth(monthKey);
+      setSuccess("Daily income entry saved successfully.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save sales report");
+      setError(e instanceof Error ? e.message : "Failed to save income report");
     } finally {
       setIsSubmittingSales(false);
     }
@@ -146,19 +171,41 @@ export function DentistPaymentsPage() {
     const byMonth = new Map<string, number>();
 
     for (const item of salesRows) {
-      const date = new Date(item.paymentDate);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const monthKey = localMonthKey(item.paymentDate);
       byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + item.amountCents);
     }
 
     return [...byMonth.entries()]
       .map(([monthKey, totalCents]) => ({
         monthKey,
-        label: new Date(`${monthKey}-01T12:00:00`).toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+        label: new Date(`${monthKey}-01T12:00:00`).toLocaleDateString("en-PH", { month: "long", year: "numeric" }),
+        totalCents,
         total: php(totalCents),
       }))
       .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
   }, [salesRows]);
+
+  const dailyForMonth = useMemo(() => {
+    if (!selectedMonth) return [];
+    const byDay = new Map<string, number>();
+    for (const item of salesRows) {
+      if (localMonthKey(item.paymentDate) !== selectedMonth) continue;
+      const dayKey = localDayKey(item.paymentDate);
+      byDay.set(dayKey, (byDay.get(dayKey) ?? 0) + item.amountCents);
+    }
+    return [...byDay.entries()]
+      .map(([dayKey, totalCents]) => ({
+        dayKey,
+        label: new Date(`${dayKey}T12:00:00`).toLocaleDateString("en-PH", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        total: php(totalCents),
+      }))
+      .sort((a, b) => a.dayKey.localeCompare(b.dayKey));
+  }, [salesRows, selectedMonth]);
 
   async function downloadProof(url: string) {
     const token = getToken();
@@ -199,6 +246,7 @@ export function DentistPaymentsPage() {
                 <TableCell>Patient</TableCell>
                 <TableCell>Appointment</TableCell>
                 <TableCell>Amount</TableCell>
+                <TableCell>Reference no.</TableCell>
                 <TableCell>Refund GCash</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right" />
@@ -207,7 +255,7 @@ export function DentistPaymentsPage() {
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} sx={{ color: "text.secondary" }}>
+                  <TableCell colSpan={7} sx={{ color: "text.secondary" }}>
                     No payments yet.
                   </TableCell>
                 </TableRow>
@@ -216,12 +264,10 @@ export function DentistPaymentsPage() {
                   <TableRow key={r.id} hover>
                     <TableCell>{`${r.patient.firstName} ${r.patient.lastName}`}</TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap" }}>
-                      {new Date(r.appointment.startAt).toLocaleString(undefined, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
+                      {formatPhDateTime(r.appointment.startAt)}
                     </TableCell>
                     <TableCell>{php(r.amountCents)}</TableCell>
+                    <TableCell>{r.gcashReferenceNumber || "—"}</TableCell>
                     <TableCell>{r.refundGcashNumber || "—"}</TableCell>
                     <TableCell>{paymentStatusLabel(r.status)}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
@@ -254,10 +300,10 @@ export function DentistPaymentsPage() {
 
       <Paper sx={{ p: 2.5, borderRadius: 3 }}>
         <Typography variant="h6" fontWeight={800} gutterBottom>
-           Sales report
+          Income report
         </Typography>
         <Typography variant="body2" color="text.secondary" paragraph>
-          Enter each day’s clinic sales manually and review monthly totals.
+          Enter each day’s clinic income in pesos (PHP). Click a month to see everyday income.
         </Typography>
 
         <Box component="form" onSubmit={submitSalesReport} sx={{ mb: 3 }}>
@@ -265,30 +311,29 @@ export function DentistPaymentsPage() {
             <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
-                label="Amount"
+                label="Amount (PHP)"
                 type="number"
                 value={salesForm.amount}
                 onChange={(event) => setSalesForm((current) => ({ ...current, amount: event.target.value }))}
-                inputProps={{ min: 1, step: 1 }}
+                inputProps={{ min: 0.01, step: 0.01 }}
+                helperText="Example: 500 or 1500.50"
               />
             </Grid>
             <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
-                label="Sales date"
+                label="Income date"
                 type="date"
                 value={salesForm.paymentDate}
                 onChange={(event) => setSalesForm((current) => ({ ...current, paymentDate: event.target.value }))}
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
-            <Grid item xs={12} sm={4}>
-            
-            </Grid>
+            <Grid item xs={12} sm={4} />
           </Grid>
           <Box sx={{ mt: 2 }}>
             <Button type="submit" variant="contained" disabled={isSubmittingSales}>
-              {isSubmittingSales ? "Saving..." : "Add daily sales"}
+              {isSubmittingSales ? "Saving..." : "Add daily income"}
             </Button>
           </Box>
         </Box>
@@ -297,19 +342,25 @@ export function DentistPaymentsPage() {
           <TableHead>
             <TableRow>
               <TableCell>Month</TableCell>
-              <TableCell align="right">Total sales</TableCell>
+              <TableCell align="right">Total income</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {monthlyTotals.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={2} sx={{ color: "text.secondary" }}>
-                  No sales recorded yet.
+                  No income recorded yet.
                 </TableCell>
               </TableRow>
             ) : (
               monthlyTotals.map((item) => (
-                <TableRow key={item.monthKey} hover>
+                <TableRow
+                  key={item.monthKey}
+                  hover
+                  selected={selectedMonth === item.monthKey}
+                  onClick={() => setSelectedMonth((current) => (current === item.monthKey ? null : item.monthKey))}
+                  sx={{ cursor: "pointer" }}
+                >
                   <TableCell>{item.label}</TableCell>
                   <TableCell align="right">{item.total}</TableCell>
                 </TableRow>
@@ -317,8 +368,40 @@ export function DentistPaymentsPage() {
             )}
           </TableBody>
         </Table>
+
+        <Collapse in={Boolean(selectedMonth)} unmountOnExit>
+          <Box sx={{ mt: 2.5 }}>
+            <Typography variant="subtitle2" fontWeight={800} gutterBottom>
+              Everyday income —{" "}
+              {monthlyTotals.find((m) => m.monthKey === selectedMonth)?.label ?? selectedMonth}
+            </Typography>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Date</TableCell>
+                  <TableCell align="right">Income</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {dailyForMonth.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={2} sx={{ color: "text.secondary" }}>
+                      No daily entries for this month.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  dailyForMonth.map((day) => (
+                    <TableRow key={day.dayKey}>
+                      <TableCell>{day.label}</TableCell>
+                      <TableCell align="right">{day.total}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </Box>
+        </Collapse>
       </Paper>
     </Stack>
   );
 }
-

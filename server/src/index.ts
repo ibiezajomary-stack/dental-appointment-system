@@ -1,5 +1,7 @@
-import fs from "node:fs/promises";
+import fs from "node:fs";
+import fsPromises from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import cron from "node-cron";
@@ -85,25 +87,55 @@ app.use("/api/admin-notifications", adminNotificationsRouter);
 app.use("/api/print", printRouter);
 app.use("/api/public/support", publicSupportRouter);
 
+function resolveClientDist(): string | null {
+  const candidates = [
+    path.resolve(process.cwd(), "client/dist"),
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client/dist"),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "index.html"))) return dir;
+  }
+  return null;
+}
+
+const clientDist = resolveClientDist();
+if (clientDist) {
+  app.use(express.static(clientDist));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) {
+      next();
+      return;
+    }
+    res.sendFile(path.join(clientDist, "index.html"), (err) => {
+      if (err) next(err);
+    });
+  });
+} else if (config.nodeEnv === "production") {
+  console.warn("[static] client/dist not found — only API routes are available");
+}
+
 app.use(errorHandler);
 
 async function ensureUploadDir(): Promise<void> {
-  await fs.mkdir(path.resolve(config.uploadDir), { recursive: true });
+  await fsPromises.mkdir(path.resolve(config.uploadDir), { recursive: true });
 }
 
-/** Hourly: send SMS reminders for confirmed appointments ~24 hours ahead. */
-cron.schedule("0 * * * *", () => {
-  void sendAppointmentReminders().catch((err) => {
-    console.error("[reminders] Cron job failed:", err);
-  });
-});
-
-cron.schedule("0 * * * *", async () => {
-  await sendAppointmentReminders();
-});
+/** Hourly (Philippine Time): remind patients with confirmed appointments starting within 24 hours. */
+cron.schedule(
+  "0 * * * *",
+  () => {
+    void sendAppointmentReminders().catch((err) => {
+      console.error("[reminders] Cron job failed:", err);
+    });
+  },
+  { timezone: "Asia/Manila" },
+);
 
 const start = async (): Promise<void> => {
   await ensureUploadDir();
+  if (clientDist) {
+    console.log(`[static] Serving client from ${clientDist}`);
+  }
   app.listen(config.port, () => {
     console.log(`API listening on http://localhost:${config.port}`);
   });

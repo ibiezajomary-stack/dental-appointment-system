@@ -50,6 +50,10 @@ export function ConsultationsPage() {
 
   useEffect(() => {
     void load();
+    const id = window.setInterval(() => {
+      void load();
+    }, 4000);
+    return () => window.clearInterval(id);
   }, []);
 
   const active = useMemo(() => {

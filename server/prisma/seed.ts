@@ -52,6 +52,16 @@ async function main(): Promise<void> {
     },
   });
 
+  await prisma.clinicSettings.upsert({
+    where: { id: "default" },
+    update: {},
+    create: {
+      id: "default",
+      clinicPhone: "0917-000-0000",
+      supportPhone: "0917-000-0000",
+    },
+  });
+
   const dentist = await prisma.dentist.findFirstOrThrow({
     where: { user: { email: "dentist@dental.local" } },
   });

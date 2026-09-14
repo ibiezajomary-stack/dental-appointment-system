@@ -21,6 +21,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { api, setToken } from "../lib/api";
 import { NeedHelpButton } from "../components/NeedHelpButton";
+import { BrandLogo } from "../components/BrandLogo";
 
 // Validation helper functions
 const validateNameInput = (value: string): string => {
@@ -137,6 +138,9 @@ export function RegisterPage() {
 
   return (
     <Container maxWidth="sm" sx={{ py: { xs: 4, sm: 8 } }}>
+      <Box sx={{ display: "flex", justifyContent: "center", mb: 2 }}>
+        <BrandLogo size={44} />
+      </Box>
       <Paper elevation={4} sx={{ p: { xs: 2.5, sm: 4 }, borderRadius: 3 }}>
         <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 2, mb: 3 }}>
           <Typography variant="h5" sx={{ fontWeight: 800 }}>

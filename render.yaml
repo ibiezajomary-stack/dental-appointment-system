@@ -35,12 +35,27 @@ services:
       - key: BREVO_SMS_SENDER
         value: iSmile
 
-  # Optional: reliable SMS reminders while the web service is asleep on the free plan.
-  # Uncomment after the web service is live, then set the URL to your app host.
-  # - type: cron
-  #   name: dental-appointment-reminders
-  #   schedule: "0 * * * *"
-  #   buildCommand: "true"
-  #   startCommand: >-
-  #     curl -fsS -H "Authorization: Bearer $CRON_SECRET"
-  #     "$RENDER_EXTERNAL_URL/api/internal/send-appointment-reminders"
+  # Hourly appointment SMS reminders. Render runs startCommand once per schedule
+  # (UTC) then the process must exit — do not use the web service start command.
+  # Dashboard (New → Cron Job): same buildCommand / startCommand / env as below.
+  - type: cron
+    name: dental-appointment-reminders
+    runtime: node
+    schedule: "0 * * * *"
+    buildCommand: npm install && npm run db:generate && npm run build -w server
+    startCommand: npm run cron
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dental-db
+          property: connectionString
+      - key: CLINIC_NAME
+        value: RHU Calinog
+      - key: SMS_PROVIDER
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SMS_SENDER
+        value: iSmile

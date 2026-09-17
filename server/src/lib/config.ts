@@ -14,7 +14,7 @@ export const config = {
   supportHours:
     process.env.SUPPORT_HOURS ??
     "Monday–Friday, 8:00 AM – 5:00 PM. For urgent registration or login issues, call during office hours.",
-  cronSecret: process.env.CRON_SECRET ?? "",
+  smsGatewaySecret: process.env.SMS_GATEWAY_SECRET ?? process.env.CRON_SECRET ?? "",
   sms: {
     enabled: Boolean(process.env.SMS_PROVIDER),
     provider: (process.env.SMS_PROVIDER ?? "brevo") as "brevo" | "twilio" | "semaphore" | "telesign",

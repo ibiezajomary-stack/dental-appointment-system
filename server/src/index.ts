@@ -22,7 +22,7 @@ import { dentistNotificationsRouter } from "./routes/dentistNotifications.js";
 import { adminNotificationsRouter } from "./routes/adminNotifications.js";
 import { printRouter } from "./routes/print.js";
 import { publicSupportRouter } from "./routes/publicSupport.js";
-import { sendAppointmentReminders } from "./jobs/appointmentReminders.js";
+import { smsSchedulesRouter } from "./routes/smsSchedules.js";
 
 const app = express();
 
@@ -55,20 +55,7 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "dental-api" });
 });
 
-/** Manual trigger only. Render Cron Jobs run `npm run cron` (src/cron.ts), not this route. */
-app.get("/api/internal/send-appointment-reminders", async (req, res, next) => {
-  if (!config.cronSecret || req.header("authorization") !== `Bearer ${config.cronSecret}`) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-
-  try {
-    const result = await sendAppointmentReminders();
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
+app.use("/api/sms-schedules", smsSchedulesRouter);
 
 app.use("/api/auth", authRouter);
 app.use("/api/dentists", dentistsRouter);

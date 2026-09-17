@@ -10,7 +10,7 @@ import {
   isVirtualFromAppointmentNotes,
   isWithinDefaultBookingSegments,
 } from "../lib/slots.js";
-import { sendAppointmentConfirmedSms } from "../lib/appointmentSms.js";
+import { cancelPendingSmsSchedules, scheduleAppointmentSms } from "../lib/smsSchedule.js";
 import { formatPhDateTime } from "../lib/datetime.js";
 
 export const appointmentsRouter = Router();
@@ -208,8 +208,8 @@ appointmentsRouter.patch(
             message: `Your appointment on ${when} has been accepted/confirmed by the dentist.`,
           },
         });
-        void sendAppointmentConfirmedSms(updated).catch((err) => {
-          console.error("[sms] Confirmation SMS error:", err);
+        void scheduleAppointmentSms(updated).catch((err) => {
+          console.error("[sms] Failed to queue appointment SMS:", err);
         });
       }
 
@@ -223,6 +223,7 @@ appointmentsRouter.patch(
             message: `Your appointment on ${when} was cancelled/rejected by the dentist.`,
           },
         });
+        await cancelPendingSmsSchedules(updated.id);
       }
 
       res.json(updated);
@@ -256,6 +257,9 @@ appointmentsRouter.delete(
         where: { id },
         data: { status: AppointmentStatus.CANCELLED },
       });
+      if (existing.status !== AppointmentStatus.CANCELLED) {
+        await cancelPendingSmsSchedules(existing.id);
+      }
       if ((isDentistOwner || isAdmin) && existing.status !== AppointmentStatus.CANCELLED) {
         const when = formatPhDateTime(existing.startAt);
         await prisma.notification.create({

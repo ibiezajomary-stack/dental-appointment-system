@@ -4,7 +4,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
-import cron from "node-cron";
 import { config } from "./lib/config.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { authRouter } from "./routes/auth.js";
@@ -23,7 +22,7 @@ import { dentistNotificationsRouter } from "./routes/dentistNotifications.js";
 import { adminNotificationsRouter } from "./routes/adminNotifications.js";
 import { printRouter } from "./routes/print.js";
 import { publicSupportRouter } from "./routes/publicSupport.js";
-import { sendAppointmentReminders } from "./jobs/appointmentReminders.js";
+import { smsSchedulesRouter } from "./routes/smsSchedules.js";
 
 const app = express();
 
@@ -56,19 +55,7 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "dental-api" });
 });
 
-app.get("/api/internal/send-appointment-reminders", async (req, res, next) => {
-  if (!config.cronSecret || req.header("authorization") !== `Bearer ${config.cronSecret}`) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-
-  try {
-    const result = await sendAppointmentReminders();
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
+app.use("/api/sms-schedules", smsSchedulesRouter);
 
 app.use("/api/auth", authRouter);
 app.use("/api/dentists", dentistsRouter);
@@ -119,17 +106,6 @@ app.use(errorHandler);
 async function ensureUploadDir(): Promise<void> {
   await fsPromises.mkdir(path.resolve(config.uploadDir), { recursive: true });
 }
-
-/** Hourly (Philippine Time): remind patients with confirmed appointments starting within 24 hours. */
-cron.schedule(
-  "0 * * * *",
-  () => {
-    void sendAppointmentReminders().catch((err) => {
-      console.error("[reminders] Cron job failed:", err);
-    });
-  },
-  { timezone: "Asia/Manila" },
-);
 
 const start = async (): Promise<void> => {
   await ensureUploadDir();

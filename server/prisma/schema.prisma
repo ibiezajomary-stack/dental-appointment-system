@@ -20,6 +20,19 @@ enum AppointmentStatus {
   CANCELLED
 }
 
+enum SmsScheduleKind {
+  CONFIRMATION
+  REMINDER
+}
+
+enum SmsScheduleStatus {
+  PENDING
+  CLAIMED
+  SENT
+  FAILED
+  CANCELLED
+}
+
 enum ConsultationStatus {
   REQUESTED
   SCHEDULED
@@ -313,8 +326,29 @@ model Appointment {
   billingRecords BillingRecord[]
   notifications Notification[]
   files        StoredFile[]
+  smsSchedules SmsSchedule[]
 
   @@index([dentistId, startAt])
+}
+
+/// Queued SMS for the Android gateway app to fetch and send.
+model SmsSchedule {
+  id            String            @id @default(cuid())
+  appointmentId String
+  appointment   Appointment       @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  kind          SmsScheduleKind
+  phone         String
+  message       String            @db.Text
+  scheduledAt   DateTime
+  status        SmsScheduleStatus @default(PENDING)
+  claimedAt     DateTime?
+  sentAt        DateTime?
+  error         String?           @db.Text
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([appointmentId, kind])
 }
 
 model AppointmentPayment {

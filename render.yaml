@@ -24,23 +24,7 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
-      - key: CRON_SECRET
+      - key: SMS_GATEWAY_SECRET
         generateValue: true
       - key: CLINIC_NAME
         value: RHU Calinog
-      - key: SMS_PROVIDER
-        value: brevo
-      - key: BREVO_API_KEY
-        sync: false
-      - key: BREVO_SMS_SENDER
-        value: iSmile
-
-  # Optional: reliable SMS reminders while the web service is asleep on the free plan.
-  # Uncomment after the web service is live, then set the URL to your app host.
-  # - type: cron
-  #   name: dental-appointment-reminders
-  #   schedule: "0 * * * *"
-  #   buildCommand: "true"
-  #   startCommand: >-
-  #     curl -fsS -H "Authorization: Bearer $CRON_SECRET"
-  #     "$RENDER_EXTERNAL_URL/api/internal/send-appointment-reminders"

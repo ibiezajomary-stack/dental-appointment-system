@@ -10,7 +10,12 @@ const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 type AppointmentForSms = {
   id: string;
   startAt: Date;
-  patient: { firstName: string; lastName: string; phone: string | null };
+  patient: {
+    firstName: string;
+    lastName: string;
+    phone: string | null;
+    emergencyPhone?: string | null;
+  };
   dentist: {
     displayName: string | null;
     phone: string | null;
@@ -40,7 +45,7 @@ function messageParams(appt: AppointmentForSms, clinicPhone: string | null) {
 
 /** Queue confirmation (send now) and a reminder 24h before the appointment. */
 export async function scheduleAppointmentSms(appt: AppointmentForSms): Promise<void> {
-  const phone = appt.patient.phone?.trim();
+  const phone = appt.patient.phone?.trim() || appt.patient.emergencyPhone?.trim() || "";
   if (!phone) {
     console.warn(`[sms] Skipping schedules for appointment ${appt.id}: patient has no phone`);
     return;
@@ -85,8 +90,7 @@ export async function scheduleAppointmentSms(appt: AppointmentForSms): Promise<v
     });
   }
 
-  // Skip the day-before SMS when the appointment is already within 24 hours.
-  if (!alreadySent.has(SmsScheduleKind.REMINDER) && reminderAt.getTime() > now.getTime() + 60_000) {
+  if (!alreadySent.has(SmsScheduleKind.REMINDER)) {
     rows.push({
       appointmentId: appt.id,
       kind: SmsScheduleKind.REMINDER,

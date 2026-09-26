@@ -208,9 +208,11 @@ appointmentsRouter.patch(
             message: `Your appointment on ${when} has been accepted/confirmed by the dentist.`,
           },
         });
-        void scheduleAppointmentSms(updated).catch((err) => {
+        try {
+          await scheduleAppointmentSms(updated);
+        } catch (err) {
           console.error("[sms] Failed to queue appointment SMS:", err);
-        });
+        }
       }
 
       if (body.status === AppointmentStatus.CANCELLED && prevStatus !== AppointmentStatus.CANCELLED) {

@@ -658,7 +658,7 @@ export function DentistPatientDetailPage() {
           ))}
         </Grid>
         <TextField
-          label="Family history"
+          label="Medical history"
           fullWidth
           margin="normal"
           multiline

@@ -25,10 +25,10 @@ const MH_KEYS = [
   { key: "allergies", label: "Allergies" },
   { key: "bleedingGums", label: "Bleeding of gums" },
   { key: "heartBp", label: "Heart / blood pressure" },
-  { key: "sinusTrouble", label: "Sinus trouble" },
+  { key: "sinusTrouble", label: "Sinus problem" },
   { key: "frequentColds", label: "Frequent colds" },
   { key: "diabetes", label: "Diabetes" },
-  { key: "selfMedication", label: "Self-medication" },
+  { key: "selfMedication", label: "Current-medication" },
 ] as const;
 
 const CE_TEXT_KEYS = [

@@ -16,7 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import { api, getApiBase, getToken } from "../../lib/api";
-import { formatPhDateTime } from "../../lib/datetime";
+import { formatPhDateTime, phTodayKey } from "../../lib/datetime";
 
 type Row = {
   id: string;
@@ -83,7 +83,7 @@ export function DentistPaymentsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [salesForm, setSalesForm] = useState({
     amount: "",
-    paymentDate: new Date().toISOString().slice(0, 10),
+    paymentDate: phTodayKey(),
     description: "",
   });
   const [isSubmittingSales, setIsSubmittingSales] = useState(false);
@@ -143,20 +143,23 @@ export function DentistPaymentsPage() {
       setError("Please enter a valid income amount in pesos and a date.");
       return;
     }
+    if (salesForm.paymentDate > phTodayKey()) {
+      setError("Income cannot be recorded for future dates.");
+      return;
+    }
 
     try {
       setIsSubmittingSales(true);
-      const localDate = new Date(`${salesForm.paymentDate}T12:00:00`);
       await api("/api/billing/sales-reports", {
         method: "POST",
         body: JSON.stringify({
           amountCents,
-          paymentDate: localDate.toISOString(),
+          paymentDate: salesForm.paymentDate,
           description: salesForm.description.trim() || undefined,
         }),
       });
       const monthKey = salesForm.paymentDate.slice(0, 7);
-      setSalesForm({ amount: "", paymentDate: new Date().toISOString().slice(0, 10), description: "" });
+      setSalesForm({ amount: "", paymentDate: phTodayKey(), description: "" });
       await loadSalesReports();
       setSelectedMonth(monthKey);
       setSuccess("Daily income entry saved successfully.");
@@ -325,8 +328,17 @@ export function DentistPaymentsPage() {
                 label="Income date"
                 type="date"
                 value={salesForm.paymentDate}
-                onChange={(event) => setSalesForm((current) => ({ ...current, paymentDate: event.target.value }))}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value && value > phTodayKey()) {
+                    setError("Income cannot be recorded for future dates.");
+                    return;
+                  }
+                  setError(null);
+                  setSalesForm((current) => ({ ...current, paymentDate: value }));
+                }}
                 InputLabelProps={{ shrink: true }}
+                inputProps={{ max: phTodayKey() }}
               />
             </Grid>
             <Grid item xs={12} sm={4} />

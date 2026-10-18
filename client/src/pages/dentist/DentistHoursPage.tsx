@@ -250,6 +250,10 @@ export function DentistHoursPage() {
       setError("End time must be after start time.");
       return;
     }
+    if (start.isBefore(dayjs())) {
+      setError("Cannot block time or set unavailability for past dates/times.");
+      return;
+    }
     setError(null);
     setSuccess(null);
     try {
@@ -398,6 +402,8 @@ export function DentistHoursPage() {
                   return <Box key={`e-${idx}`} sx={{ minHeight: 48 }} />;
                 }
                 const cellDate = new Date(y, m, day);
+                const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                const isPast = cellDate < startOfToday;
                 const dow = cellDate.getDay();
                 const hasBlock = hasUnavailableOnWeekday(dow);
                 const hasOneTime = hasDateBlockOnDate(cellDate);
@@ -412,8 +418,17 @@ export function DentistHoursPage() {
                   <ButtonBase
                     key={`${y}-${m}-${day}`}
                     focusRipple
-                    aria-label={`${label}. View blocks for this day.`}
-                    onClick={() => setSelectedCalendarDate(cellDate)}
+                    disabled={isPast}
+                    aria-label={
+                      isPast
+                        ? `${label}. Past dates cannot be blocked.`
+                        : `${label}. View blocks for this day.`
+                    }
+                    onClick={() => {
+                      if (isPast) return;
+                      setSelectedCalendarDate(cellDate);
+                      setDateBlockDate(dayjs(cellDate));
+                    }}
                     sx={{
                       minHeight: 48,
                       width: "100%",
@@ -422,14 +437,15 @@ export function DentistHoursPage() {
                       justifyContent: "center",
                       borderRadius: 1.5,
                       border: "1px solid",
-                      borderColor: hasBlock || hasOneTime ? "warning.light" : "divider",
-                      bgcolor: isToday ? "rgba(0, 150, 136, 0.08)" : "background.paper",
-                      color: "text.primary",
+                      borderColor: isPast ? "grey.300" : hasBlock || hasOneTime ? "warning.light" : "divider",
+                      bgcolor: isPast ? "grey.200" : isToday ? "rgba(0, 150, 136, 0.08)" : "background.paper",
+                      color: isPast ? "text.disabled" : "text.primary",
                       fontWeight: isToday ? 700 : 500,
                       fontSize: "0.95rem",
                       boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.02)",
+                      cursor: isPast ? "not-allowed" : "pointer",
                       "&:hover": {
-                        bgcolor: isToday ? "rgba(0, 150, 136, 0.14)" : "action.hover",
+                        bgcolor: isPast ? "grey.200" : isToday ? "rgba(0, 150, 136, 0.14)" : "action.hover",
                       },
                     }}
                   >
@@ -440,8 +456,8 @@ export function DentistHoursPage() {
             </Box>
 
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2 }}>
-              Click a date to see blocks for that weekday. Amber border: at least one block. Use{" "}
-              <strong>Set Block Appointment</strong> to edit.
+              Click a date to see blocks for that weekday. Past dates are greyed out and cannot be blocked. Amber
+              border: at least one block. Use <strong>Set Block Appointment</strong> to edit.
             </Typography>
           </Box>
         </Paper>
@@ -623,12 +639,14 @@ export function DentistHoursPage() {
                       label="Date"
                       value={dateBlockDate}
                       onChange={(v) => setDateBlockDate(v)}
+                      disablePast
                       slotProps={pickerSlotProps}
                     />
                     <TimePicker
                       label="Start"
                       value={dateBlockStart}
                       onChange={(v) => setDateBlockStart(v)}
+                      minTime={dateBlockDate?.isSame(dayjs(), "day") ? dayjs() : undefined}
                       slotProps={pickerSlotProps}
                     />
                     <TimePicker

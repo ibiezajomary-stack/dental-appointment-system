@@ -23,6 +23,7 @@ import { adminNotificationsRouter } from "./routes/adminNotifications.js";
 import { printRouter } from "./routes/print.js";
 import { publicSupportRouter } from "./routes/publicSupport.js";
 import { smsSchedulesRouter } from "./routes/smsSchedules.js";
+import { expireUnconfirmedAppointments } from "./lib/expireAppointments.js";
 
 const app = express();
 
@@ -112,6 +113,13 @@ const start = async (): Promise<void> => {
   if (clientDist) {
     console.log(`[static] Serving client from ${clientDist}`);
   }
+  const sweepExpired = () => {
+    void expireUnconfirmedAppointments().catch((err) => {
+      console.error("[appointments] Failed to expire unconfirmed appointments:", err);
+    });
+  };
+  sweepExpired();
+  setInterval(sweepExpired, 30_000);
   app.listen(config.port, () => {
     console.log(`API listening on http://localhost:${config.port}`);
   });

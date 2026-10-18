@@ -18,6 +18,7 @@ enum AppointmentStatus {
   CONFIRMED
   COMPLETED
   CANCELLED
+  EXPIRED
 }
 
 enum SmsScheduleKind {
@@ -246,6 +247,17 @@ model Dentist {
   notifications     DentistNotification[]
   issuedDocuments   IssuedDocument[]
   salesReports      SalesReport[]
+  signature         DentistSignature?
+}
+
+/// PNG or JPEG signature drawn on certificates and prescriptions.
+model DentistSignature {
+  id        String   @id @default(cuid())
+  dentistId String   @unique
+  dentist   Dentist  @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  blob      Bytes
+  mimeType  String
+  updatedAt DateTime @updatedAt
 }
 
 /// One-time dentist blocks for a specific date/time range (local time as entered; stored as timestamp).

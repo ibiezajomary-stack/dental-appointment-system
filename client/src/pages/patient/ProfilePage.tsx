@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Paper, TextField, Typography } from "@mui/material";
+import { Alert, Button, Paper, Snackbar, TextField, Typography } from "@mui/material";
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../lib/api";
 
@@ -36,6 +36,7 @@ export function ProfilePage() {
   const { refresh } = useAuth();
   const [data, setData] = useState<PatientForm | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export function ProfilePage() {
     if (!data) return;
     setBusy(true);
     setError(null);
+    setSuccess(false);
     try {
       const payload = {
         ...data,
@@ -59,6 +61,7 @@ export function ProfilePage() {
         body: JSON.stringify(payload),
       });
       setData(apiToForm(updated));
+      setSuccess(true);
       void refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -149,6 +152,16 @@ export function ProfilePage() {
       <Button type="submit" variant="contained" sx={{ mt: 2 }} disabled={busy}>
         Save
       </Button>
+      <Snackbar
+        open={success}
+        autoHideDuration={3000}
+        onClose={() => setSuccess(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setSuccess(false)} sx={{ width: "100%" }}>
+          Profile updated successfully.
+        </Alert>
+      </Snackbar>
     </Paper>
   );
 }

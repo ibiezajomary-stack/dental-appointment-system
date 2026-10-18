@@ -413,7 +413,7 @@ export function DentistHome() {
                               {slotSummary(a)}
                             </Typography>
                           </Box>
-                          {a.status !== "COMPLETED" && (
+                          {a.status !== "COMPLETED" && a.status !== "CANCELLED" && a.status !== "EXPIRED" && (
                             <Button
                               size="small"
                               onClick={() => void markDone(a.id)}

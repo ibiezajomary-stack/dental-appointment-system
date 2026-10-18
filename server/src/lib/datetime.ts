@@ -31,3 +31,13 @@ export function formatPhTime(date: Date): string {
     minute: "2-digit",
   });
 }
+
+/** Calendar date in Philippine time, `YYYY-MM-DD`. */
+export function phDateKey(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: PH_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}

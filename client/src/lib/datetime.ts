@@ -72,3 +72,9 @@ export function phToday(): { year: number; month: number; day: number } {
   const p = phParts(new Date());
   return { year: p.year, month: p.month, day: p.day };
 }
+
+/** Today in Philippine time as `YYYY-MM-DD`. */
+export function phTodayKey(): string {
+  const t = phToday();
+  return `${t.year}-${String(t.month).padStart(2, "0")}-${String(t.day).padStart(2, "0")}`;
+}

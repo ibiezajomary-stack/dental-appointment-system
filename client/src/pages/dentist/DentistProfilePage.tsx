@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, Paper, TextField, Typography } from "@mui/material";
-import { api } from "../../lib/api";
+import { Alert, Box, Button, Paper, Snackbar, TextField, Typography } from "@mui/material";
+import { api, getApiBase, getToken } from "../../lib/api";
 
 type Profile = {
   id: string;
@@ -11,6 +11,7 @@ type Profile = {
   clinicAddress: string | null;
   bio: string | null;
   user: { email: string };
+  signature: { mimeType: string; updatedAt: string } | null;
 };
 
 export function DentistProfilePage() {
@@ -26,6 +27,9 @@ export function DentistProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
+  const [savedSignatureUrl, setSavedSignatureUrl] = useState<string | null>(null);
 
   async function load() {
     setError(null);
@@ -49,6 +53,43 @@ export function DentistProfilePage() {
     void load();
   }, []);
 
+  useEffect(() => {
+    if (!data?.signature) {
+      setSavedSignatureUrl(null);
+      return;
+    }
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    void (async () => {
+      const token = getToken();
+      const res = await fetch(`${getApiBase()}/api/dentists/me/signature`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok || cancelled) return;
+      const blob = await res.blob();
+      objectUrl = URL.createObjectURL(blob);
+      if (cancelled) {
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
+      setSavedSignatureUrl(objectUrl);
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [data?.signature?.updatedAt]);
+
+  useEffect(() => {
+    if (!signatureFile) {
+      setSignaturePreview(null);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(signatureFile);
+    setSignaturePreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [signatureFile]);
+
   async function save() {
     setBusy(true);
     setError(null);
@@ -65,8 +106,29 @@ export function DentistProfilePage() {
           bio: form.bio.trim() || null,
         }),
       });
+      if (signatureFile) {
+        const fd = new FormData();
+        fd.set("signature", signatureFile);
+        const token = getToken();
+        const res = await fetch(`${getApiBase()}/api/dentists/me/signature`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          body: fd,
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const msg = typeof payload.error === "string" ? payload.error : "Signature upload failed";
+          throw new Error(msg);
+        }
+        const uploaded = payload as { mimeType?: string; updatedAt?: string };
+        updated.signature = {
+          mimeType: uploaded.mimeType ?? signatureFile.type,
+          updatedAt: uploaded.updatedAt ?? new Date().toISOString(),
+        };
+        setSignatureFile(null);
+      }
       setData(updated);
-      setSuccess("Profile saved.");
+      setSuccess("Profile updated successfully.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -86,11 +148,6 @@ export function DentistProfilePage() {
       {error ? (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
-        </Alert>
-      ) : null}
-      {success ? (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
-          {success}
         </Alert>
       ) : null}
 
@@ -140,11 +197,51 @@ export function DentistProfilePage() {
         placeholder="Short description about your services, experience, etc."
       />
 
+      <Box sx={{ mt: 3 }}>
+        <Typography variant="subtitle1" fontWeight={800} gutterBottom>
+          Digital signature
+        </Typography>
+        <Typography variant="body2" color="text.secondary" paragraph>
+          PNG or JPEG. This image is placed above your name on dental certificates and prescriptions.
+        </Typography>
+        {(signaturePreview || savedSignatureUrl) && (
+          <Box
+            component="img"
+            src={signaturePreview ?? savedSignatureUrl ?? undefined}
+            alt="Dentist signature"
+            sx={{ display: "block", maxWidth: 240, maxHeight: 100, mb: 1.5, objectFit: "contain" }}
+          />
+        )}
+        <Button variant="outlined" component="label" disabled={busy}>
+          {signatureFile ? signatureFile.name : "Choose signature image"}
+          <input
+            hidden
+            type="file"
+            accept="image/png,image/jpeg"
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null;
+              setSignatureFile(file);
+              e.target.value = "";
+            }}
+          />
+        </Button>
+      </Box>
+
       <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 2 }}>
         <Button variant="contained" onClick={() => void save()} disabled={busy}>
           {busy ? "Saving…" : "Save profile"}
         </Button>
       </Box>
+      <Snackbar
+        open={Boolean(success)}
+        autoHideDuration={3000}
+        onClose={() => setSuccess(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setSuccess(null)} sx={{ width: "100%" }}>
+          {success}
+        </Alert>
+      </Snackbar>
     </Paper>
   );
 }

@@ -36,11 +36,12 @@ type Row = {
   patient: { id: string; firstName: string; lastName: string };
 };
 
-const STATUS_ORDER = ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"] as const;
+const STATUS_ORDER = ["PENDING", "CONFIRMED", "COMPLETED", "EXPIRED", "CANCELLED"] as const;
 const STATUS_LABEL: Record<(typeof STATUS_ORDER)[number], string> = {
   PENDING: "Pending",
   CONFIRMED: "Confirmed",
   COMPLETED: "Completed",
+  EXPIRED: "Expired",
   CANCELLED: "Cancelled",
 };
 
@@ -63,6 +64,8 @@ function statusPillStyle(status: string): { label: string; bg: string; color: st
       return { label: "Completed", bg: "#ede7f6", color: "#4527a0" };
     case "CANCELLED":
       return { label: "Cancelled", bg: "#ffebee", color: "#c62828" };
+    case "EXPIRED":
+      return { label: "Expired", bg: "#fff3e0", color: "#e65100" };
     default:
       return { label: status, bg: "#f5f5f5", color: "#424242" };
   }
@@ -381,15 +384,24 @@ export function DentistAppointmentsPage() {
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
         transformOrigin={{ vertical: "top", horizontal: "right" }}
       >
-        {STATUS_ORDER.map((st) => (
-          <MenuItem
-            key={st}
-            onClick={() => menuForId && void setStatus(menuForId, st)}
-            selected={rows.find((x) => x.id === menuForId)?.status === st}
-          >
-            {statusPillStyle(st).label}
-          </MenuItem>
-        ))}
+        {STATUS_ORDER.map((st) => {
+          const menuRow = rows.find((x) => x.id === menuForId);
+          const past = menuRow ? new Date(menuRow.startAt).getTime() < Date.now() : false;
+          const confirmBlocked = st === "CONFIRMED" && past;
+          const expireBlocked =
+            st === "EXPIRED" &&
+            (!past || (menuRow?.status !== "PENDING" && menuRow?.status !== "EXPIRED"));
+          return (
+            <MenuItem
+              key={st}
+              disabled={confirmBlocked || expireBlocked}
+              onClick={() => menuForId && void setStatus(menuForId, st)}
+              selected={menuRow?.status === st}
+            >
+              {statusPillStyle(st).label}
+            </MenuItem>
+          );
+        })}
       </Menu>
 
       <Dialog open={Boolean(detailRow)} onClose={() => setDetailForId(null)} fullWidth maxWidth="sm">

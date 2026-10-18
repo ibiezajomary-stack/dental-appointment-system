@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFImage } from "pdf-lib";
 import { IssuedDocumentType, Role } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../lib/config.js";
@@ -84,22 +84,14 @@ async function buildPrescriptionPdf(patientId: string, dentistIdHint?: string) {
   const dentist = dentistIdHint
     ? await prisma.dentist.findUnique({
         where: { id: dentistIdHint },
-        include: { user: { select: { email: true } } },
+        include: { user: { select: { email: true } }, signature: true },
       })
     : latestNote
       ? await prisma.dentist.findUnique({
           where: { id: latestNote.consultation.dentistId },
-          include: { user: { select: { email: true } } },
+          include: { user: { select: { email: true } }, signature: true },
         })
-      : await prisma.dentist.findFirst({ include: { user: { select: { email: true } } } });
-
-  const medications = [
-    latestNote?.prescribedMedication,
-    latestNote?.notes ? `Notes: ${latestNote.notes}` : null,
-    latestNote?.treatmentPlan ? `Treatment plan: ${latestNote.treatmentPlan}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+      : await prisma.dentist.findFirst({ include: { user: { select: { email: true } }, signature: true } });
 
   const pdfBytes = await makePrescriptionPdf({
     patientName: `${patient.firstName} ${patient.lastName}`,
@@ -107,9 +99,12 @@ async function buildPrescriptionPdf(patientId: string, dentistIdHint?: string) {
     patientAge: ageFromDob(patient.dateOfBirth),
     patientGender: patient.sex ?? "",
     prescribedDate: latestNote?.createdAt ?? new Date(),
-    medications: medications || "No medications prescribed.",
+    medication: latestNote?.prescribedMedication ?? "",
+    notes: [latestNote?.diagnosis, latestNote?.notes].filter((part) => part?.trim()).join("\n"),
+    treatmentPlan: latestNote?.treatmentPlan ?? "",
     dentistName: dentist?.displayName ?? "Dentist",
     licenseNumber: dentist?.licenseNumber ?? "",
+    signature: dentist?.signature ?? null,
   });
 
   return { pdfBytes, patient, hasNote: Boolean(latestNote?.prescribedMedication?.trim()) };
@@ -127,9 +122,9 @@ async function buildCertificatePdf(
   const dentist = dentistIdHint
     ? await prisma.dentist.findUnique({
         where: { id: dentistIdHint },
-        include: { user: { select: { email: true } } },
+        include: { user: { select: { email: true } }, signature: true },
       })
-    : await prisma.dentist.findFirst({ include: { user: { select: { email: true } } } });
+    : await prisma.dentist.findFirst({ include: { user: { select: { email: true } }, signature: true } });
 
   const patientFullName = `${patient.firstName} ${patient.lastName}`;
   const pdfBytes = await makeDentalCertificatePdf({
@@ -146,6 +141,7 @@ async function buildCertificatePdf(
     dentistTitle: dentist?.specialty ?? "Dentist",
     facilityName: config.clinicName,
     licenseNumber: dentist?.licenseNumber ?? "",
+    signature: dentist?.signature ?? null,
   });
 
   return pdfBytes;
@@ -276,54 +272,129 @@ function drawRightAligned(
   page.drawText(safe, { x: rightX - w, y, size, font });
 }
 
+type SignatureFile = { blob: Uint8Array; mimeType: string };
+
+function formatDentistName(name: string): string {
+  const trimmed = name.trim() || "DENTIST";
+  const upper = trimmed.toUpperCase();
+  return upper.startsWith("DR.") || upper.startsWith("DR ") ? upper : `DR. ${upper}`;
+}
+
+function medicationItems(raw: string): string[] {
+  const parts = raw
+    .split(/[\n,;]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : ["No medications prescribed."];
+}
+
+async function embedSignatureImage(
+  pdf: PDFDocument,
+  signature: SignatureFile | null | undefined,
+): Promise<PDFImage | null> {
+  if (!signature?.blob?.byteLength) return null;
+  const mime = signature.mimeType.toLowerCase();
+  try {
+    if (mime.includes("png")) return await pdf.embedPng(signature.blob);
+    if (mime.includes("jpeg") || mime.includes("jpg")) return await pdf.embedJpg(signature.blob);
+  } catch (err) {
+    console.warn("[print] Could not embed dentist signature", err);
+  }
+  return null;
+}
+
+function drawSignatureImage(
+  page: ReturnType<Awaited<ReturnType<typeof PDFDocument.create>>["addPage"]>,
+  image: PDFImage | null,
+  rightX: number,
+  bottomY: number,
+): void {
+  if (!image) return;
+  const maxW = 150;
+  const maxH = 64;
+  let width = maxW;
+  let height = (image.height / image.width) * width;
+  if (height > maxH) {
+    height = maxH;
+    width = (image.width / image.height) * height;
+  }
+  page.drawImage(image, { x: rightX - width, y: bottomY, width, height });
+}
+
 async function makePrescriptionPdf(params: {
   patientName: string;
   patientAddress: string;
   patientAge: string;
   patientGender: string;
   prescribedDate: Date;
-  medications: string;
+  medication: string;
+  notes: string;
+  treatmentPlan: string;
   dentistName: string;
   licenseNumber: string;
+  signature: SignatureFile | null;
 }): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const signature = await embedSignatureImage(pdf, params.signature);
   const page = pdf.addPage([612, 792]);
   const { width, height } = page.getSize();
-  const left = 48;
-  const right = width - 48;
+  const left = 54;
+  const right = width - 54;
+  const bodyWidth = right - left;
   let y = height - 56;
 
-  // Header block
-  drawTextSafe(page, `Name: ${params.patientName}`, left, y, font, 11);
-  y -= 16;
-  drawTextSafe(page, `Date: ${formatDate(params.prescribedDate)}`, left, y, font, 11);
-  y -= 16;
-  drawTextSafe(page, `Address: ${params.patientAddress || "N/A"}`, left, y, font, 11);
-  y -= 16;
-  drawTextSafe(page, `Age/Gender: ${params.patientAge} / ${params.patientGender || "N/A"}`, left, y, font, 11);
-  y -= 28;
-
-  // Rx symbol (WinAnsi-safe)
-  drawTextSafe(page, "Rx", left, y - 8, fontBold, 36);
-
-  // Body — medications
-  const bodyLeft = left + 64;
-  const bodyWidth = right - bodyLeft;
-  const charsPerLine = Math.floor(bodyWidth / 6);
-  const medLines = wrapLines(params.medications || "No medications prescribed.", charsPerLine);
-  let bodyY = y;
-  for (const line of medLines) {
-    drawTextSafe(page, line, bodyLeft, bodyY, font, 11);
-    bodyY -= 14;
+  const headerRows: [string, string][] = [
+    ["Name:", params.patientName || "N/A"],
+    ["Date:", formatDate(params.prescribedDate)],
+    ["Address:", params.patientAddress || "N/A"],
+    ["Age/Gender:", `${params.patientAge} / ${params.patientGender || "N/A"}`],
+  ];
+  for (const [label, value] of headerRows) {
+    drawTextSafe(page, label, left, y, fontBold, 11);
+    const labelWidth = textWidth(label, fontBold, 11);
+    const valueLines = wrapLinesToWidth(value, bodyWidth - labelWidth - 10, font, 11);
+    for (const line of valueLines) {
+      drawTextSafe(page, line, left + labelWidth + 8, y, font, 11);
+      y -= 16;
+    }
   }
 
-  // Footer
-  const footerY = 96;
-  page.drawLine({ start: { x: left, y: footerY + 24 }, end: { x: right, y: footerY + 24 }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-  drawTextSafe(page, `Doctor Name: ${params.dentistName}`, left, footerY, fontBold, 11);
-  drawTextSafe(page, `Lic. No.: ${params.licenseNumber || "N/A"}`, left, footerY - 16, font, 11);
+  y -= 18;
+  drawTextSafe(page, "Rx", left, y - 6, fontBold, 42);
+  y -= 56;
+
+  const sections: { label: string; body: string }[] = [
+    { label: "Medication:", body: medicationItems(params.medication).map((item) => `- ${item}`).join("\n") },
+    { label: "Notes/Diagnosis:", body: params.notes.trim() || "—" },
+    { label: "Treatment Plan/Duration:", body: params.treatmentPlan.trim() || "—" },
+  ];
+
+  const footerLineY = 188;
+  for (const section of sections) {
+    if (y < footerLineY + 36) break;
+    drawTextSafe(page, section.label, left, y, fontBold, 12);
+    y -= 18;
+    const lines = section.body.split("\n").flatMap((paragraph) => wrapLinesToWidth(paragraph, bodyWidth, font, 11));
+    for (const line of lines) {
+      if (y < footerLineY + 20) break;
+      drawTextSafe(page, line, left, y, font, 11);
+      y -= 16;
+    }
+    y -= 10;
+  }
+
+  page.drawLine({
+    start: { x: left, y: footerLineY },
+    end: { x: right, y: footerLineY },
+    thickness: 0.8,
+    color: rgb(0.35, 0.35, 0.35),
+  });
+  drawSignatureImage(page, signature, right, 118);
+  const dentistLine = formatDentistName(params.dentistName);
+  drawRightAligned(page, dentistLine, right, 96, fontBold, 11);
+  drawRightAligned(page, `Lic. No.: ${params.licenseNumber || "N/A"}`, right, 78, font, 11);
 
   return pdf.save();
 }
@@ -342,10 +413,12 @@ async function makeDentalCertificatePdf(params: {
   dentistTitle: string;
   facilityName: string;
   licenseNumber: string;
+  signature: SignatureFile | null;
 }): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const signature = await embedSignatureImage(pdf, params.signature);
   const page = pdf.addPage([612, 792]);
   const { width, height } = page.getSize();
   const margin = 72;
@@ -380,7 +453,9 @@ async function makeDentalCertificatePdf(params: {
     `This certification is issued upon the request of Mr./Mrs. ${params.requesterName} ` +
     `for whatever purpose may serve him/her.`;
 
+  const footerTop = 250;
   for (const line of wrapLinesToWidth(paragraph1, bodyWidth, font, bodySize)) {
+    if (y < footerTop) break;
     drawTextSafe(page, line, margin, y, font, bodySize);
     y -= lineHeight;
   }
@@ -388,21 +463,21 @@ async function makeDentalCertificatePdf(params: {
   y -= 12;
 
   for (const line of wrapLinesToWidth(paragraph2, bodyWidth, font, bodySize)) {
+    if (y < footerTop) break;
     drawTextSafe(page, line, margin, y, font, bodySize);
     y -= lineHeight;
   }
 
-  // Signature block — bottom right, top-to-bottom order per paper form
-  const dentistLine = params.dentistName.toUpperCase().startsWith("DR.")
-    ? params.dentistName.toUpperCase()
-    : `DR. ${params.dentistName.toUpperCase()}`;
+  // Signature image sits directly above the dentist name, license, and clinic lines.
+  const dentistLine = formatDentistName(params.dentistName);
+  const specialization = [params.dentistTitle || "Dentist", params.facilityName].filter(Boolean).join(" / ");
   const footerLines: { text: string; bold: boolean }[] = [
     { text: dentistLine, bold: true },
-    { text: params.dentistTitle || "Dentist", bold: false },
-    { text: params.facilityName, bold: false },
+    { text: specialization, bold: false },
     { text: `Lic. # ${params.licenseNumber || "N/A"}`, bold: false },
   ];
   let footerY = 150;
+  drawSignatureImage(page, signature, right, footerY + 18);
   for (const line of footerLines) {
     const f = line.bold ? fontBold : font;
     drawRightAligned(page, line.text, right, footerY, f, bodySize);

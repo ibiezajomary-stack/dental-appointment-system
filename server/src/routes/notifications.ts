@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { Role } from "@prisma/client";
+import { expireUnconfirmedAppointments } from "../lib/expireAppointments.js";
 
 export const notificationsRouter = Router();
 
@@ -13,6 +14,7 @@ notificationsRouter.get(
   requireRole(Role.PATIENT),
   async (req: AuthedRequest, res, next) => {
     try {
+      await expireUnconfirmedAppointments();
       const patient = await prisma.patient.findUnique({ where: { userId: req.userId! } });
       if (!patient) {
         res.status(400).json({ error: "Patient profile missing" });
@@ -30,6 +32,7 @@ notificationsRouter.get(
 
 notificationsRouter.get("/", requireAuth, requireRole(Role.PATIENT), async (req: AuthedRequest, res, next) => {
   try {
+    await expireUnconfirmedAppointments();
     const patient = await prisma.patient.findUnique({ where: { userId: req.userId! } });
     if (!patient) {
       res.status(400).json({ error: "Patient profile missing" });

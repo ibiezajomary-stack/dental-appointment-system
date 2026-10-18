@@ -75,6 +75,10 @@ export function AdminTimeManagementPage() {
       setError("End must be after start.");
       return;
     }
+    if (startAt.isBefore(dayjs())) {
+      setError("Cannot block time or set unavailability for past dates/times.");
+      return;
+    }
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -151,12 +155,14 @@ export function AdminTimeManagementPage() {
             label="Start"
             value={startAt}
             onChange={(v) => setStartAt(v)}
+            disablePast
             slotProps={{ textField: { size: "small", fullWidth: true } }}
           />
           <DateTimePicker
             label="End"
             value={endAt}
             onChange={(v) => setEndAt(v)}
+            disablePast
             slotProps={{ textField: { size: "small", fullWidth: true } }}
           />
           <TextField

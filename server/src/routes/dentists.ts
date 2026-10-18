@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { generateSlotsForDay, clinicDayUtcRange } from "../lib/slots.js";
@@ -7,6 +8,21 @@ import { requireRole } from "../middleware/requireRole.js";
 import { Role } from "@prisma/client";
 
 export const dentistsRouter = Router();
+
+const signatureUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+});
+
+const profileInclude = {
+  user: { select: { email: true } },
+  signature: { select: { mimeType: true, updatedAt: true } },
+} as const;
+
+function toBytes(buf: Buffer): Uint8Array<ArrayBuffer> {
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+  return new Uint8Array<ArrayBuffer>(ab);
+}
 
 dentistsRouter.get("/", async (_req, res, next) => {
   try {
@@ -40,7 +56,7 @@ dentistsRouter.get("/:id/slots", async (req, res, next) => {
     const existing = await prisma.appointment.findMany({
       where: {
         dentistId: id,
-        status: { not: "CANCELLED" },
+        status: { notIn: ["CANCELLED", "EXPIRED"] },
         startAt: { gte: dayStart, lt: dayEnd },
       },
     });
@@ -120,6 +136,10 @@ dentistsRouter.post(
       const body = dateBlockSchema.parse(req.body);
       const startAt = new Date(body.startAt);
       const endAt = new Date(body.endAt);
+      if (startAt.getTime() < Date.now()) {
+        res.status(400).json({ error: "Cannot block time or set unavailability for past dates/times." });
+        return;
+      }
       const created = await prisma.dentistDateBlock.create({
         data: {
           dentistId: dentist.id,
@@ -177,7 +197,7 @@ dentistsRouter.get(
     try {
       const dentist = await prisma.dentist.findUnique({
         where: { userId: req.userId! },
-        include: { user: { select: { email: true } } },
+        include: profileInclude,
       });
       if (!dentist) {
         res.status(404).json({ error: "Dentist profile not found" });
@@ -212,9 +232,75 @@ dentistsRouter.patch(
           clinicAddress: patch.clinicAddress ?? undefined,
           bio: patch.bio ?? undefined,
         },
-        include: { user: { select: { email: true } } },
+        include: profileInclude,
       });
       res.json(updated);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+dentistsRouter.post(
+  "/me/signature",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  signatureUpload.single("signature"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: "Signature image is required." });
+        return;
+      }
+      if (!/^image\/(png|jpeg|jpg)$/i.test(req.file.mimetype)) {
+        res.status(400).json({ error: "Signature must be a PNG or JPEG image." });
+        return;
+      }
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      const mimeType = req.file.mimetype === "image/jpg" ? "image/jpeg" : req.file.mimetype;
+      const row = await prisma.dentistSignature.upsert({
+        where: { dentistId: dentist.id },
+        create: {
+          dentistId: dentist.id,
+          blob: toBytes(req.file.buffer),
+          mimeType,
+        },
+        update: {
+          blob: toBytes(req.file.buffer),
+          mimeType,
+        },
+        select: { mimeType: true, updatedAt: true },
+      });
+      res.status(201).json(row);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+dentistsRouter.get(
+  "/me/signature",
+  requireAuth,
+  requireRole(Role.DENTIST),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
+      if (!dentist) {
+        res.status(404).json({ error: "Dentist profile not found" });
+        return;
+      }
+      const row = await prisma.dentistSignature.findUnique({ where: { dentistId: dentist.id } });
+      if (!row) {
+        res.status(404).json({ error: "No signature uploaded" });
+        return;
+      }
+      res.setHeader("Content-Type", row.mimeType);
+      res.setHeader("Cache-Control", "private, max-age=60");
+      res.send(Buffer.from(row.blob));
     } catch (e) {
       next(e);
     }

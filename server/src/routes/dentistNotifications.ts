@@ -4,6 +4,7 @@ import { Role } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
+import { expireUnconfirmedAppointments } from "../lib/expireAppointments.js";
 
 export const dentistNotificationsRouter = Router();
 
@@ -13,6 +14,7 @@ dentistNotificationsRouter.get(
   requireRole(Role.DENTIST),
   async (req: AuthedRequest, res, next) => {
     try {
+      await expireUnconfirmedAppointments();
       const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
       if (!dentist) {
         res.status(404).json({ error: "Dentist profile not found" });
@@ -39,6 +41,7 @@ dentistNotificationsRouter.get(
   requireRole(Role.DENTIST),
   async (req: AuthedRequest, res, next) => {
     try {
+      await expireUnconfirmedAppointments();
       const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
       if (!dentist) {
         res.status(404).json({ error: "Dentist profile not found" });

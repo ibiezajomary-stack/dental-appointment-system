@@ -101,7 +101,7 @@ paymentsRouter.post(
           const clash = await tx.appointment.findFirst({
             where: {
               dentistId: body.dentistId,
-              status: { not: "CANCELLED" },
+              status: { notIn: ["CANCELLED", "EXPIRED"] },
               AND: [{ startAt: { lt: endAt } }, { endAt: { gt: startAt } }],
             },
           });

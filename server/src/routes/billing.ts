@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { BillingStatus, Role } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { phDateKey } from "../lib/datetime.js";
 import { requireAuth, type AuthedRequest } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
 
@@ -70,6 +71,15 @@ const createSalesReportSchema = z.object({
   description: z.string().optional(),
 });
 
+/** Accept `YYYY-MM-DD` or an ISO timestamp and return the Philippine calendar date. */
+function incomeDateKey(raw: string): string | null {
+  const dateOnly = /^(\d{4}-\d{2}-\d{2})$/.exec(raw.trim());
+  if (dateOnly) return dateOnly[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return phDateKey(parsed);
+}
+
 billingRouter.post(
   "/sales-reports",
   requireAuth,
@@ -82,11 +92,20 @@ billingRouter.post(
         return;
       }
       const body = createSalesReportSchema.parse(req.body);
+      const dateKey = incomeDateKey(body.paymentDate);
+      if (!dateKey) {
+        res.status(400).json({ error: "Please enter a valid income date." });
+        return;
+      }
+      if (dateKey > phDateKey(new Date())) {
+        res.status(400).json({ error: "Income cannot be recorded for future dates." });
+        return;
+      }
       const row = await prisma.salesReport.create({
         data: {
           dentistId: dentist.id,
           amountCents: body.amountCents,
-          paymentDate: new Date(body.paymentDate),
+          paymentDate: new Date(`${dateKey}T04:00:00.000Z`),
           description: body.description,
         },
       });

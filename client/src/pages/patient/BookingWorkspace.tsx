@@ -53,6 +53,23 @@ type ApptRow = {
   dentist: { user: { email: string } };
 };
 
+function appointmentStatusLabel(status: string): string {
+  switch (status) {
+    case "PENDING":
+      return "Pending";
+    case "CONFIRMED":
+      return "Confirmed";
+    case "COMPLETED":
+      return "Completed";
+    case "CANCELLED":
+      return "Cancelled";
+    case "EXPIRED":
+      return "Expired";
+    default:
+      return status;
+  }
+}
+
 type PatientMe = {
   firstName: string;
   lastName: string;
@@ -956,9 +973,9 @@ export function BookingWorkspace({
                     {formatPhDateTime(r.startAt)} – {formatPhTime(r.endAt)}
                   </TableCell>
                   <TableCell>{r.dentist.user.email}</TableCell>
-                  <TableCell>{r.status}</TableCell>
+                  <TableCell>{appointmentStatusLabel(r.status)}</TableCell>
                   <TableCell>
-                    {r.status !== "CANCELLED" && r.status !== "COMPLETED" && (
+                    {r.status !== "CANCELLED" && r.status !== "COMPLETED" && r.status !== "EXPIRED" && (
                       <Button size="small" onClick={() => void cancelAppointment(r.id)}>
                         Cancel
                       </Button>

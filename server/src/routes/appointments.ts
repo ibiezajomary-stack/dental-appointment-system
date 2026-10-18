@@ -12,6 +12,7 @@ import {
 } from "../lib/slots.js";
 import { cancelPendingSmsSchedules, scheduleAppointmentSms } from "../lib/smsSchedule.js";
 import { formatPhDateTime } from "../lib/datetime.js";
+import { expireUnconfirmedAppointments, notifyAppointmentExpired } from "../lib/expireAppointments.js";
 
 export const appointmentsRouter = Router();
 
@@ -59,7 +60,7 @@ appointmentsRouter.post("/", requireAuth, requireRole(Role.PATIENT), async (req:
       const clash = await tx.appointment.findFirst({
         where: {
           dentistId: body.dentistId,
-          status: { not: AppointmentStatus.CANCELLED },
+          status: { notIn: [AppointmentStatus.CANCELLED, AppointmentStatus.EXPIRED] },
           AND: [{ startAt: { lt: endAt } }, { endAt: { gt: startAt } }],
         },
       });
@@ -121,6 +122,7 @@ appointmentsRouter.post("/", requireAuth, requireRole(Role.PATIENT), async (req:
 
 appointmentsRouter.get("/", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
+    await expireUnconfirmedAppointments();
     const patient = await prisma.patient.findUnique({ where: { userId: req.userId! } });
     const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
 
@@ -168,14 +170,37 @@ appointmentsRouter.patch(
     try {
       const id = typeof req.params.id === "string" ? req.params.id : req.params.id[0];
       const body = patchSchema.parse(req.body);
+      await expireUnconfirmedAppointments();
       const dentist = await prisma.dentist.findUnique({ where: { userId: req.userId! } });
-      const existing = await prisma.appointment.findUnique({ where: { id } });
+      const existing = await prisma.appointment.findUnique({
+        where: { id },
+        include: { patient: { select: { firstName: true, lastName: true } } },
+      });
       if (!existing) {
         res.status(404).json({ error: "Not found" });
         return;
       }
       if (req.role === Role.DENTIST && existing.dentistId !== dentist?.id) {
         res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      if (body.status === AppointmentStatus.CONFIRMED && existing.startAt.getTime() < Date.now()) {
+        if (existing.status === AppointmentStatus.PENDING) {
+          const expired = await prisma.appointment.updateMany({
+            where: { id: existing.id, status: AppointmentStatus.PENDING },
+            data: { status: AppointmentStatus.EXPIRED },
+          });
+          if (expired.count > 0) await notifyAppointmentExpired(existing);
+        }
+        res.status(400).json({ error: "Cannot confirm an appointment scheduled in the past." });
+        return;
+      }
+      if (
+        body.status === AppointmentStatus.EXPIRED &&
+        existing.status !== AppointmentStatus.EXPIRED &&
+        (existing.startAt.getTime() >= Date.now() || existing.status !== AppointmentStatus.PENDING)
+      ) {
+        res.status(400).json({ error: "Only past unconfirmed appointments can be marked as expired." });
         return;
       }
       const prevStatus = existing.status;
@@ -213,6 +238,10 @@ appointmentsRouter.patch(
         } catch (err) {
           console.error("[sms] Failed to queue appointment SMS:", err);
         }
+      }
+
+      if (body.status === AppointmentStatus.EXPIRED && prevStatus === AppointmentStatus.PENDING) {
+        await notifyAppointmentExpired(updated);
       }
 
       if (body.status === AppointmentStatus.CANCELLED && prevStatus !== AppointmentStatus.CANCELLED) {

@@ -100,6 +100,10 @@ adminClinicRouter.post(
         res.status(400).json({ error: "startAt must be before endAt" });
         return;
       }
+      if (startAt.getTime() < Date.now()) {
+        res.status(400).json({ error: "Cannot block time or set unavailability for past dates/times." });
+        return;
+      }
       const row = await prisma.clinicTimeBlock.create({
         data: {
           startAt,

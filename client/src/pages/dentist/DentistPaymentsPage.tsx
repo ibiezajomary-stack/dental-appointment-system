@@ -143,7 +143,12 @@ export function DentistPaymentsPage() {
       setError("Please enter a valid income amount in pesos and a date.");
       return;
     }
-    if (salesForm.paymentDate > phTodayKey()) {
+    const today = phTodayKey();
+    if (salesForm.paymentDate < today) {
+      setError("Income cannot be recorded for past dates.");
+      return;
+    }
+    if (salesForm.paymentDate > today) {
       setError("Income cannot be recorded for future dates.");
       return;
     }
@@ -330,7 +335,12 @@ export function DentistPaymentsPage() {
                 value={salesForm.paymentDate}
                 onChange={(event) => {
                   const value = event.target.value;
-                  if (value && value > phTodayKey()) {
+                  const today = phTodayKey();
+                  if (value && value < today) {
+                    setError("Income cannot be recorded for past dates.");
+                    return;
+                  }
+                  if (value && value > today) {
                     setError("Income cannot be recorded for future dates.");
                     return;
                   }
@@ -338,7 +348,8 @@ export function DentistPaymentsPage() {
                   setSalesForm((current) => ({ ...current, paymentDate: value }));
                 }}
                 InputLabelProps={{ shrink: true }}
-                inputProps={{ max: phTodayKey() }}
+                inputProps={{ min: phTodayKey(), max: phTodayKey() }}
+                helperText="Today only"
               />
             </Grid>
             <Grid item xs={12} sm={4} />

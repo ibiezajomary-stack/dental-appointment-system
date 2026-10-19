@@ -97,7 +97,12 @@ billingRouter.post(
         res.status(400).json({ error: "Please enter a valid income date." });
         return;
       }
-      if (dateKey > phDateKey(new Date())) {
+      const todayKey = phDateKey(new Date());
+      if (dateKey < todayKey) {
+        res.status(400).json({ error: "Income cannot be recorded for past dates." });
+        return;
+      }
+      if (dateKey > todayKey) {
         res.status(400).json({ error: "Income cannot be recorded for future dates." });
         return;
       }
